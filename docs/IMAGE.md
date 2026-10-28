@@ -84,7 +84,7 @@ relying on a physical deployment.
 ## Maintainer release workflow
 
 **Rule: every PR merged into `main` automatically gets a stable version tag.**
-`Version merged PR` checks the pushed commit's associated merged PR through
+`Version and release` checks the pushed commit's associated merged PR through
 GitHub's API. It starts at `v0.1.0` if there are no stable version tags, otherwise
 increments the patch of the highest `vMAJOR.MINOR.PATCH` tag. Prerelease and
 validation tags do not affect that calculation. Direct pushes and unmerged or
@@ -105,6 +105,9 @@ run, so relying only on the tag push would not work. This design needs no PAT or
 additional repository secrets, only Actions `contents: write` and PR read access.
 The installed workflow becomes active when reviewed changes reach `main`;
 opening a PR does not merge it or publish a stable release.
+The same orchestrator calls the reusable pipeline for `image-validation/**`
+branches without allocating a stable tag, so that call path can be tested
+before a PR is merged.
 
 Normal PR CI runs unit tests, shell/workflow lint and Ubuntu host install,
 enable, upgrade and rollback checks. Installer-related PRs also build and

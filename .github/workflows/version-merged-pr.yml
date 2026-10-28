@@ -1,11 +1,12 @@
-name: Version merged PR
+name: Version and release
 on:
   push:
-    branches: [main]
+    branches: [main, "image-validation/**"]
 permissions:
   contents: read
 jobs:
   tag:
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
@@ -38,4 +39,12 @@ jobs:
       contents: write
     with:
       release_tag: ${{ needs.tag.outputs.version }}
+      publish: true
+  validation:
+    if: startsWith(github.ref, 'refs/heads/image-validation/')
+    # Exercise the same reusable-workflow call without merging or creating a stable tag.
+    uses: ./.github/workflows/image-release.yml
+    permissions:
+      contents: write
+    with:
       publish: true
