@@ -75,12 +75,12 @@ jobs:
       - name: Authenticate and download Ubuntu
         id: upstream
         env:
-          VERSION: ${{ inputs.ubuntu_version || 'latest' }}
+          REQUESTED_UBUNTU: ${{ inputs.ubuntu_version || 'latest' }}
           EXPECTED_SHA256: ${{ inputs.ubuntu_sha256 }}
           COMMIT: ${{ github.sha }}
         run: |
-          bash image/download-ubuntu.sh build/upstream "$VERSION"
-          selection="$(python3 image/ubuntu_release.py build/upstream/SHA256SUMS --version "$VERSION")"
+          bash image/download-ubuntu.sh build/upstream "$REQUESTED_UBUNTU"
+          selection="$(python3 image/ubuntu_release.py build/upstream/SHA256SUMS --version "$REQUESTED_UBUNTU")"
           version="$(sed -n 's/^version=//p' <<< "$selection")"
           digest="$(sed -n 's/^sha256=//p' <<< "$selection")"
           [[ -z "$EXPECTED_SHA256" || "$EXPECTED_SHA256" == "$digest" ]] || { echo "ERROR: upstream changed since discovery"; exit 1; }
