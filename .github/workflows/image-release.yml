@@ -48,14 +48,14 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y -qq xorriso gnupg qemu-system-x86 ovmf
       - name: Authenticate and download Ubuntu
-        run: bash image/download-ubuntu.sh build/upstream 24.04.3
+        run: bash image/download-ubuntu.sh build/upstream 24.04.5.1
       - name: Build and verify exact commit
         env:
           COMMIT: ${{ github.sha }}
         run: |
-          bash image/build-iso.sh --iso build/upstream/ubuntu-24.04.3-desktop-amd64.iso --ref "$COMMIT" --out build/homelab-monitor-"${COMMIT:0:12}".iso
+          bash image/build-iso.sh --iso build/upstream/ubuntu-24.04.5.1-desktop-amd64.iso --ref "$COMMIT" --out build/homelab-monitor-"${COMMIT:0:12}".iso
           # Free upstream space before the boot test and release packaging.
-          rm build/upstream/ubuntu-24.04.3-desktop-amd64.iso
+          rm build/upstream/ubuntu-24.04.5.1-desktop-amd64.iso
       - name: Boot the release ISO in BIOS and UEFI
         env:
           COMMIT: ${{ github.sha }}

@@ -105,7 +105,7 @@ Android, .NET and GHC SDK directories only on disposable GitHub-hosted runners,
 never on a self-hosted machine. Local ARM Macs are not the
 preferred full-build host. If runner capacity is insufficient, select a larger
 hosted runner; do not silently skip build or boot checks. The Ubuntu point
-release is explicit in the workflow (currently 24.04.3); update it through a
+release is explicit in the workflow (currently 24.04.5.1); update it through a
 reviewed change when it leaves the signed upstream manifest.
 
 Successful builds retain transport artifacts in Actions for seven days.

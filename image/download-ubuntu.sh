@@ -2,7 +2,7 @@
 # Fetch a specific Desktop image; authenticate the manifest before downloading it.
 set -euo pipefail
 DEST="${1:-build/upstream}"
-VERSION="${2:-24.04.3}"
+VERSION="${2:-24.04.5.1}"
 KEY=843938DF228D22F7B3742BC0D94AA3F0EFE21092
 [[ "$VERSION" =~ ^24\.04\.[0-9]+(\.[0-9]+)?$ ]] || { echo "ERROR: expected 24.04 point release" >&2; exit 1; }
 BASE=https://releases.ubuntu.com/24.04

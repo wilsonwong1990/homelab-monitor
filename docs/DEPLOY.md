@@ -74,8 +74,8 @@ No secrets or private infrastructure details are placed in the image.
 # Linux: sudo apt install xorriso gnupg git python3
 # macOS: brew install xorriso gnupg (also requires git and Python 3.9+)
 # Allow about 20 GB free for a local build; hosted release jobs check 26 GB.
-bash image/download-ubuntu.sh build/upstream 24.04.3
-bash image/build-iso.sh --iso build/upstream/ubuntu-24.04.3-desktop-amd64.iso --ref HEAD
+bash image/download-ubuntu.sh build/upstream 24.04.5.1
+bash image/build-iso.sh --iso build/upstream/ubuntu-24.04.5.1-desktop-amd64.iso --ref HEAD
 ```
 
 The signed Ubuntu manifest and pinned signing fingerprint are mandatory.
