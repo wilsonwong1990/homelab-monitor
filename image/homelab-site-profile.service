@@ -1,0 +1,17 @@
+[Unit]
+Description=Apply the hash-pinned homelab site profile (public keys, packages, pinned agents)
+Wants=network-online.target
+After=network-online.target
+ConditionPathExists=/etc/homelab-site/source.json
+ConditionPathExists=!/var/lib/homelab-site/.applied
+
+[Service]
+Type=oneshot
+# Only non-secret data is fetched; agents are checked out, never executed or enabled.
+ExecStart=/usr/bin/python3 /opt/homelab-monitor-src/image/site_profile.py apply
+TimeoutStartSec=30min
+Restart=on-failure
+RestartSec=120
+
+[Install]
+WantedBy=multi-user.target

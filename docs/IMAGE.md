@@ -54,7 +54,9 @@ with cloud inference disabled, and the configured local model. It disables
 suspend/hibernate so monitoring can run while idle. It **does not enable the
 monitor/notifier/worker until you configure them**. It does not install Hermes,
 enable Discord approvals or remediation, create infrastructure accounts, supply
-private tokens, or configure an independent heartbeat observer.
+private tokens, or configure an independent heartbeat observer. Netboot installs
+can also apply an optional, non-secret site profile with SSH public keys, extra
+packages and commit-pinned agent checkouts; see the site profile section in NETBOOT.md.
 
 Follow the Configure and Verify and enable sections in the deployment guide:
 https://github.com/wilsonwong1990/homelab-monitor/blob/main/docs/DEPLOY.md

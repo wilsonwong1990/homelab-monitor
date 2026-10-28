@@ -10,7 +10,10 @@ goto ${choice}
 echo This boots an OS installer. Review the disk and account screens carefully.
 prompt Press a key to boot, or Ctrl-C to cancel... || goto cancel
 imgfree
-kernel ${asset_base}/vmlinuz initrd=initrd boot=casper ip=dhcp netboot=url iso-url=${asset_base}/installer.iso cloud-config-url=/dev/null autoinstall console=tty0 console=ttyS0,115200n8 systemd.log_target=console --- || goto failed
+# The staging host may set a hash-pinned, non-secret site profile for first boot.
+clear profile_args
+isset ${profile_sha256} && set profile_args homelab.profile=${profile_url} homelab.profile_sha256=${profile_sha256} ||
+kernel ${asset_base}/vmlinuz initrd=initrd boot=casper ip=dhcp netboot=url iso-url=${asset_base}/installer.iso cloud-config-url=/dev/null autoinstall console=tty0 console=ttyS0,115200n8 systemd.log_target=console ${profile_args} --- || goto failed
 initrd --name initrd ${asset_base}/initrd || goto failed
 boot || goto failed
 :failed

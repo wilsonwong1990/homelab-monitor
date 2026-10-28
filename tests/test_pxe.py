@@ -74,6 +74,27 @@ class PxeTests(unittest.TestCase):
                 thread.join()
                 server.server_close()
 
+    def test_site_profile_is_pinned_in_root_menu_only(self):
+        with tempfile.TemporaryDirectory() as temp:
+            assets, web = self.fixture(Path(temp))
+            good = Path(temp, "profile.json")
+            good.write_text('{"version": 1, "packages": ["htop"]}')
+            stage(assets, web, "http://10.0.0.5", "test-release", good)
+            sha = digest(good)
+            menu = (web / "homelab.ipxe").read_text()
+            self.assertTrue(menu.startswith("#!ipxe\n"))
+            self.assertIn(f"set profile_url http://10.0.0.5/homelab-site/profile-{sha}.json\n", menu)
+            self.assertIn(f"set profile_sha256 {sha}\n", menu)
+            self.assertEqual(digest(web / f"homelab-site/profile-{sha}.json"), sha)
+            self.assertNotIn("profile", (web / "homelab/test-release/boot.ipxe").read_text())
+            stage(assets, web, "http://10.0.0.5", "test-release")
+            self.assertNotIn("profile", (web / "homelab.ipxe").read_text())
+            secret = Path(temp, "secret.json")
+            secret.write_text('{"version": 1, "token": "ghp_' + "a" * 36 + '"}')
+            with self.assertRaisesRegex(ValueError, "credential"):
+                stage(assets, web, "http://10.0.0.5", "test-release", secret)
+            self.assertNotIn("profile", (web / "homelab.ipxe").read_text())
+
     def test_corruption_and_concurrent_sync_fail_before_menu_publication(self):
         with tempfile.TemporaryDirectory() as temp:
             assets, web = self.fixture(Path(temp))

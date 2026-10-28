@@ -85,6 +85,47 @@ publicly. HTTPS requires trust support in both your iPXE build and initramfs;
 do not bypass certificate checks to make it work. Checksums verified by the
 staging host do not authenticate a subsequently modified HTTP transfer.
 
+## Optional: site profile for agents and personal settings
+
+Netboot installs can pull in **non-secret** personal settings on first boot.
+Write a JSON profile (start from `examples/site-profile.example.json`):
+
+- `ssh_authorized_keys`: SSH **public** keys per installer-created user (not root).
+- `packages`: extra Ubuntu packages.
+- `agents`: git repositories cloned over HTTPS and pinned to a full 40-character
+  commit, checked out read-only under `/opt/homelab-agents/NAME`. Nothing in
+  them is run, installed or enabled; review and set them up yourself.
+
+Validate it, then pass it to the staging run:
+
+```bash
+python3 image/site_profile.py check site-profile.json   # prints its SHA-256
+python3 image/stage_netboot.py ... --site-profile site-profile.json
+```
+
+Staging publishes it as `homelab-site/profile-SHA256.json` and pins that URL and
+hash in the top-level `homelab.ipxe`. The menu passes both on the installer
+kernel command line. The installer records them in `/etc/homelab-site/source.json`,
+and `homelab-site-profile.service` downloads the profile on first boot. It
+refuses to apply a profile whose hash differs, so a file changed after staging
+is rejected. The service retries every two minutes until it succeeds, then
+records `/var/lib/homelab-site/.applied`. Check it with
+`sudo journalctl -u homelab-site-profile.service`.
+
+Each staging run rewrites the top-level menu, so omit `--site-profile` to stop
+offering one. Per-release `boot.ipxe` files never carry a profile. USB installs
+have no profile on the kernel command line; apply one manually instead with
+`sudo python3 /opt/homelab-monitor-src/image/site_profile.py apply --url URL --sha256 SHA`.
+
+**The profile is readable by any device on the LAN, so it must hold no
+secrets.** The schema has no field for credentials, and validation rejects
+unknown fields and anything that looks like a private key, Discord webhook,
+GitHub, Slack, JWT or Proxmox token. Agent repositories must therefore be
+publicly cloneable or mirrored on the LAN without credentials. Enter tokens,
+webhooks and API keys on the machine itself, in the root-only
+`/etc/homelab-monitor/*.env` files described in DEPLOY.md, and give each the
+narrowest scope you can.
+
 ## Add the custom menu in netboot.xyz
 
 In the netboot.xyz custom menu (for Docker, edit the existing `custom.ipxe` in
