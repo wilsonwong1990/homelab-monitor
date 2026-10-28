@@ -56,7 +56,7 @@ class _Connection:
                 raise ACPError("agent message exceeds size limit")
             try:
                 message = json.loads(line)
-            except ValueError:
+            except (ValueError, RecursionError):
                 raise ACPError("agent sent invalid JSON") from None
             if not isinstance(message, dict):
                 raise ACPError("agent sent an invalid message")
@@ -68,7 +68,12 @@ class _Connection:
             if "error" in message:
                 error = message["error"] if isinstance(message["error"], dict) else {}
                 raise ACPError(f"agent error {error.get('code', '?')}")
-            return message.get("result") or {}
+            result = message.get("result")
+            if result is None:
+                return {}
+            if not isinstance(result, dict):
+                raise ACPError("agent sent an invalid result")
+            return result
 
     async def _handle(self, message):
         method, params = message.get("method"), message.get("params") or {}
@@ -123,5 +128,10 @@ async def prompt_agent(host, port, prompt, *, cwd="/sandbox", timeout=180):
         return await asyncio.wait_for(run(), timeout=timeout)
     except asyncio.TimeoutError:
         raise ACPError("agent timed out") from None
+    except ACPError:
+        raise
     except (OSError, asyncio.LimitOverrunError, ValueError) as error:
         raise ACPError(f"agent unavailable ({type(error).__name__})") from None
+    except Exception as error:
+        LOG.warning("ACP protocol error: %s", type(error).__name__)
+        raise ACPError("agent protocol error") from None

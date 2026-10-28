@@ -99,6 +99,25 @@ class ACPTests(unittest.TestCase):
         asyncio.run(run_agent(agent))
         self.assertEqual(agent.unknown_reply["error"]["code"], -32601)
 
+    def test_malformed_result_is_acp_error(self):
+        async def scenario():
+            async def handle(reader, writer):
+                await reader.readline()
+                writer.write(b'{"jsonrpc":"2.0","id":1,"result":{}}\n')
+                await reader.readline()
+                writer.write(b'{"jsonrpc":"2.0","id":2,"result":"x"}\n')
+                await writer.drain()
+                await reader.read()
+                writer.close()
+            server = await asyncio.start_server(handle, "127.0.0.1", 0)
+            try:
+                await acp.prompt_agent("127.0.0.1", server.sockets[0].getsockname()[1], "x", timeout=5)
+            finally:
+                server.close()
+                await server.wait_closed()
+        with self.assertRaisesRegex(acp.ACPError, "invalid result"):
+            asyncio.run(scenario())
+
     def test_unreachable_and_timeout(self):
         with self.assertRaises(acp.ACPError):
             asyncio.run(acp.prompt_agent("127.0.0.1", 1, "x", timeout=5))
