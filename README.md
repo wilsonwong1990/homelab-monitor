@@ -87,6 +87,8 @@ below are for development or other layouts.
 split ISO assets, checksum verification, interactive disk/account setup and
 network-dependent first boot. Images contain pinned source, not your tokens;
 monitoring still needs configuration and explicit enablement.
+Each PR merged into `main` automatically pushes the next patch version tag and
+builds its installer release; unmerged PRs produce validation artifacts only.
 
 Use Python 3.9+ from this source checkout:
 

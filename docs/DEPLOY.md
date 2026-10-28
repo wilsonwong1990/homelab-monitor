@@ -57,6 +57,11 @@ Validation prereleases are explicitly nonstable. This is a network-dependent
 installer, not an offline appliance; configuration and tokens remain yours to
 supply after installation.
 
+Every PR merged into `main` automatically receives the next semantic patch tag
+(`v0.1.0` initially) and invokes the installer release pipeline. No PAT is needed.
+PR creation alone and direct pushes do not publish stable versions; see the
+[maintainer release rule](IMAGE.md#maintainer-release-workflow).
+
 `image/build-iso.sh` repacks the **stock** Ubuntu Desktop 24.04 ISO with:
 
 - `autoinstall.yaml`: minimal desktop, security updates, git/python/sqlite.

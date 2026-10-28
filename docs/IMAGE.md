@@ -83,11 +83,35 @@ relying on a physical deployment.
 
 ## Maintainer release workflow
 
+**Rule: every PR merged into `main` automatically gets a stable version tag.**
+`Version merged PR` checks the pushed commit's associated merged PR through
+GitHub's API. It starts at `v0.1.0` if there are no stable version tags, otherwise
+increments the patch of the highest `vMAJOR.MINOR.PATCH` tag. Prerelease and
+validation tags do not affect that calculation. Direct pushes and unmerged or
+closed-without-merge PRs do not get stable release tags. There are no bump labels
+or label exceptions: all merged PRs get the same patch-release rule.
+
+Remote tag creation is atomic and never force-pushed. Concurrent merges retry
+after a tag-name collision; a rerun reuses the version already pointing at that
+commit, including annotated tags. There is deliberately no shared Actions
+concurrency group for version allocation: GitHub's single pending-slot behavior
+could otherwise drop a merge. Each assigned version has its own image-build
+concurrency group. GitHub selects latest stable releases using its legacy
+version-ordering mode, not whichever concurrent image upload finishes last.
+
+The version workflow **calls the reusable installer workflow directly after
+pushing the tag**. Tags pushed by `GITHUB_TOKEN` do not trigger another workflow
+run, so relying only on the tag push would not work. This design needs no PAT or
+additional repository secrets, only Actions `contents: write` and PR read access.
+The installed workflow becomes active when reviewed changes reach `main`;
+opening a PR does not merge it or publish a stable release.
+
 Normal PR CI runs unit tests, shell/workflow lint and Ubuntu host install,
 enable, upgrade and rollback checks. Installer-related PRs also build and
 boot-check the ISO (without publishing). The installer workflow repeats the
 quality checks before downloading an ISO. Release builds run on:
 
+- A PR merge into `main`: allocates a patch tag and calls the installer workflow.
 - A reviewed `vMAJOR.MINOR.PATCH` tag: publishes a release for that exact existing tag.
 - An `image-validation/**` branch push: publishes a clearly nonstable prerelease
   for that branch commit, never moves a stable tag, and never marks it latest.
@@ -96,8 +120,9 @@ quality checks before downloading an ISO. Release builds run on:
 
 Use a unique validation branch for each trial, for example
 `git push origin HEAD:refs/heads/image-validation/my-trial`. This does not merge
-the feature branch. Stable tagging is a separate human release decision after
-review; this pipeline does not merge PRs or create stable tags.
+the feature branch. Merging a reviewed PR is the human authorization for its
+automatic patch release. The rule creates stable tags only after a PR merge; it never
+merges PRs. Existing version tags pushed by an operator can also trigger a build.
 
 The workflow uses an Ubuntu 24.04 x86-64 hosted runner, a 90-minute image-job
 timeout, and checks for 26 GB free before download. It reclaims the preinstalled
@@ -114,5 +139,11 @@ asset, verifies reconstructed ISO bytes again, then publishes. A failed
 publication leaves a draft for inspection, not a successful public release.
 Rerun an unsuccessful validation job with a new run attempt; for an existing
 stable draft, inspect and remove that draft deliberately before retrying.
+An already published release is never overwritten by a rerun; inspect the
+existing release rather than moving its tag. Failed image/release builds leave
+the assigned stable tag intact so the failed Actions run can be diagnosed and
+rerun. Protect stable tags against updates/deletion, and permit the Actions
+identity to create tags under the repository's ruleset; an incompatible rule or
+read-only token fails explicitly rather than silently skipping a release.
 Configure protected branches/tags and restrict workflow modification and
 repository write access; no privileged LAN/self-hosted runner is required.
