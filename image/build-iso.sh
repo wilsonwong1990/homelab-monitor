@@ -93,9 +93,11 @@ git -C "$SOURCE" show "$COMMIT:image/autoinstall.yaml" > "$WORK/autoinstall.yaml
 mkdir -p "$WORK/boot/grub"
 for config in grub.cfg loopback.cfg; do
   xorriso -osirrox on -indev "$ISO" -extract "/boot/grub/$config" "$WORK/boot/grub/$config"
+  chmod u+w "$WORK/boot/grub/$config"
   python3 "$SOURCE/image/iso_tools.py" boot "$WORK/boot/grub/$config"
 done
 xorriso -osirrox on -indev "$ISO" -extract /md5sum.txt "$WORK/md5sum.txt"
+chmod u+w "$WORK/md5sum.txt"
 python3 "$SOURCE/image/iso_tools.py" media-sums "$WORK"
 
 xorriso -indev "$ISO" -outdev "$OUT" \
