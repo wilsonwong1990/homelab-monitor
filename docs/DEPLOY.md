@@ -62,6 +62,13 @@ Every PR merged into `main` automatically receives the next semantic patch tag
 PR creation alone and direct pushes do not publish stable versions; see the
 [maintainer release rule](IMAGE.md#maintainer-release-workflow).
 
+After review/merge, a daily Actions check also discovers new signed Ubuntu
+24.04 Desktop point releases and builds/releases their installers automatically.
+For PXE via netboot.xyz, use the [private LAN staging guide](NETBOOT.md):
+the staging host authenticates to GitHub and serves credential-free ISO,
+kernel/initrd and custom menu assets. A private repo URL cannot be directly
+chainloaded. Disk/account setup remain interactive.
+
 `image/build-iso.sh` repacks the **stock** Ubuntu Desktop 24.04 ISO with:
 
 - `autoinstall.yaml`: minimal desktop, security updates, git/python/sqlite.
@@ -79,8 +86,9 @@ No secrets or private infrastructure details are placed in the image.
 # Linux: sudo apt install xorriso gnupg git python3
 # macOS: brew install xorriso gnupg (also requires git and Python 3.9+)
 # Allow about 20 GB free for a local build; hosted release jobs check 26 GB.
-bash image/download-ubuntu.sh build/upstream 24.04.5.1
-bash image/build-iso.sh --iso build/upstream/ubuntu-24.04.5.1-desktop-amd64.iso --ref HEAD
+bash image/download-ubuntu.sh build/upstream latest
+version="$(python3 image/ubuntu_release.py build/upstream/SHA256SUMS | sed -n 's/^version=//p')"
+bash image/build-iso.sh --iso "build/upstream/ubuntu-$version-desktop-amd64.iso" --ref HEAD
 ```
 
 The signed Ubuntu manifest and pinned signing fingerprint are mandatory.

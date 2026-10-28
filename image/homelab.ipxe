@@ -1,0 +1,21 @@
+#!ipxe
+# asset_base is set by the LAN staging host, never to an authenticated GitHub URL.
+isset ${asset_base} || goto failed
+menu Homelab Ubuntu Desktop installer (amd64)
+item cancel Return without installing
+item install Start interactive installer (disk selection required)
+choose --default cancel --timeout 30000 choice || goto cancel
+goto ${choice}
+:install
+echo This boots an OS installer. Review the disk and account screens carefully.
+prompt Press a key to boot, or Ctrl-C to cancel... || goto cancel
+imgfree
+kernel ${asset_base}/vmlinuz initrd=initrd boot=casper ip=dhcp netboot=url iso-url=${asset_base}/installer.iso cloud-config-url=/dev/null autoinstall console=tty0 console=ttyS0,115200n8 systemd.log_target=console --- || goto failed
+initrd --name initrd ${asset_base}/initrd || goto failed
+boot || goto failed
+:failed
+echo Homelab network boot failed. Check LAN assets and DHCP. No disk selected.
+prompt Press a key to return... ||
+exit 1
+:cancel
+exit 0

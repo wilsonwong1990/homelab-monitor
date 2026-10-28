@@ -7,15 +7,28 @@ on:
       - "image/**"
       - "deploy/**"
       - "tests/test_image.py"
+      - "tests/test_pxe.py"
+      - "tests/test_ubuntu_release.py"
       - ".github/workflows/*.yml"
   workflow_dispatch:
     inputs:
+      ubuntu_version:
+        description: Ubuntu 24.04 Desktop point release, or latest from signed manifest
+        type: string
+        default: latest
       publish:
         description: Publish a nonstable validation prerelease
         type: boolean
         default: false
   workflow_call:
     inputs:
+      ubuntu_version:
+        type: string
+        default: latest
+      ubuntu_sha256:
+        description: Optional expected upstream digest from authenticated discovery
+        type: string
+        default: ""
       release_tag:
         description: Existing version tag assigned to this workflow's source commit
         type: string
@@ -35,6 +48,8 @@ jobs:
     needs: quality
     runs-on: ubuntu-24.04
     timeout-minutes: 90
+    outputs:
+      artifact: ${{ steps.upstream.outputs.artifact }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -58,14 +73,26 @@ jobs:
           test -r /usr/share/OVMF/OVMF_CODE_4M.fd
           test -r /usr/share/OVMF/OVMF_VARS_4M.fd
       - name: Authenticate and download Ubuntu
-        run: bash image/download-ubuntu.sh build/upstream 24.04.5.1
+        id: upstream
+        env:
+          VERSION: ${{ inputs.ubuntu_version || 'latest' }}
+          EXPECTED_SHA256: ${{ inputs.ubuntu_sha256 }}
+          COMMIT: ${{ github.sha }}
+        run: |
+          bash image/download-ubuntu.sh build/upstream "$VERSION"
+          selection="$(python3 image/ubuntu_release.py build/upstream/SHA256SUMS --version "$VERSION")"
+          version="$(sed -n 's/^version=//p' <<< "$selection")"
+          digest="$(sed -n 's/^sha256=//p' <<< "$selection")"
+          [[ -z "$EXPECTED_SHA256" || "$EXPECTED_SHA256" == "$digest" ]] || { echo "ERROR: upstream changed since discovery"; exit 1; }
+          echo "UPSTREAM_ISO=build/upstream/ubuntu-$version-desktop-amd64.iso" >> "$GITHUB_ENV"
+          echo "artifact=installer-$COMMIT-$version-${digest:0:12}" >> "$GITHUB_OUTPUT"
       - name: Build and verify exact commit
         env:
           COMMIT: ${{ github.sha }}
         run: |
-          bash image/build-iso.sh --iso build/upstream/ubuntu-24.04.5.1-desktop-amd64.iso --ref "$COMMIT" --out build/homelab-monitor-"${COMMIT:0:12}".iso
+          bash image/build-iso.sh --iso "$UPSTREAM_ISO" --ref "$COMMIT" --out build/homelab-monitor-"${COMMIT:0:12}".iso
           # Free upstream space before the boot test and release packaging.
-          rm build/upstream/ubuntu-24.04.5.1-desktop-amd64.iso
+          rm "$UPSTREAM_ISO"
       - name: Boot the release ISO in BIOS and UEFI
         env:
           COMMIT: ${{ github.sha }}
@@ -79,20 +106,24 @@ jobs:
           SOURCE_URL: ${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }}
         run: |
           iso=build/homelab-monitor-"${COMMIT:0:12}".iso
+          python3 image/pxe.py "$iso" build/release
           python3 image/iso_tools.py split "$iso" build/release
           python3 image/assemble.py build/release --check-only
           cp "$iso.provenance.json" build/release/provenance.json
           cp image/assemble.py build/release/assemble.py
           cp docs/IMAGE.md build/release/INSTALL.md
+          cp docs/NETBOOT.md build/release/NETBOOT.md
           cp build/upstream/SHA256SUMS build/release/UBUNTU-SHA256SUMS
           cp build/upstream/SHA256SUMS.gpg build/release/UBUNTU-SHA256SUMS.gpg
           cp build/upstream/ubuntu-cdimage.gpg build/release/ubuntu-cdimage.gpg
           cp build/*-serial.log build/release/
           printf 'Source: %s\nBuild and validation: %s\n' "$SOURCE_URL" "$RUN_URL" > build/release/BUILD.txt
           rm "$iso"
+      - name: Stage and serve the real private-release payload (no credentials in HTTP)
+        run: python3 image/test_stage.py build/release
       - uses: actions/upload-artifact@v4
         with:
-          name: installer-${{ github.sha }}
+          name: ${{ steps.upstream.outputs.artifact }}
           path: build/release/*
           compression-level: 0
           if-no-files-found: error
@@ -113,9 +144,10 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
-          name: installer-${{ github.sha }}
+          name: ${{ needs.image.outputs.artifact }}
           path: release
       - name: Publish only after verifying uploaded release assets
         env:
@@ -129,32 +161,58 @@ jobs:
           RELEASE_TAG: ${{ inputs.release_tag }}
         run: |
           python3 release/assemble.py release --check-only
+          python3 -c 'from image.pxe import verify_assets; from pathlib import Path; verify_assets(Path("release"))'
           stable=0
+          refresh=0
+          prerelease=true
           if [[ -n "$RELEASE_TAG" || "$REF_TYPE" == tag ]]; then
             tag="${RELEASE_TAG:-$REF_NAME}"
-            [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "Stable releases require vMAJOR.MINOR.PATCH"; exit 1; }
-            ref="$(gh api "repos/$GH_REPO/git/ref/tags/$tag")"
-            target="$(jq -r '.object.sha' <<< "$ref")"
-            if [[ "$(jq -r '.object.type' <<< "$ref")" == tag ]]; then
-              target="$(gh api "repos/$GH_REPO/git/tags/$target" --jq '.object | select(.type == "commit") | .sha')"
+            if [[ "$tag" == ubuntu-* || "$tag" == image-validation-ubuntu-* ]]; then
+              expected="$(python3 -c 'import json,os; from image.ubuntu_release import release_tag; p=json.load(open("release/provenance.json")); print(release_tag(p["upstream_image"].removeprefix("ubuntu-").removesuffix("-desktop-amd64.iso"),os.environ["COMMIT"],p["upstream_sha256"],os.environ["RELEASE_TAG"].startswith("image-validation-")))' )"
+              [[ "$tag" == "$expected" ]] || { echo "ERROR: Ubuntu release identity mismatch"; exit 1; }
+              [[ "$tag" != ubuntu-* || "$REF_NAME" == main ]] || { echo "ERROR: production Ubuntu refreshes require main"; exit 1; }
+              flags=(--target "$COMMIT")
+              refresh=1
+              [[ "$tag" != ubuntu-* ]] || prerelease=false
+            else
+              [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "Stable releases require vMAJOR.MINOR.PATCH"; exit 1; }
+              ref="$(gh api "repos/$GH_REPO/git/ref/tags/$tag")"
+              target="$(jq -r '.object.sha' <<< "$ref")"
+              if [[ "$(jq -r '.object.type' <<< "$ref")" == tag ]]; then
+                target="$(gh api "repos/$GH_REPO/git/tags/$target" --jq '.object | select(.type == "commit") | .sha')"
+              fi
+              [[ "$target" == "$COMMIT" ]] || { echo "ERROR: release tag does not resolve to the built commit"; exit 1; }
+              flags=(--verify-tag)
+              stable=1
+              prerelease=false
             fi
-            [[ "$target" == "$COMMIT" ]] || { echo "ERROR: release tag does not resolve to the built commit"; exit 1; }
-            flags=(--verify-tag)
-            stable=1
           else
             tag="image-validation-$RUN_ID-$ATTEMPT"
             flags=(--target "$COMMIT" --prerelease)
           fi
           {
             printf 'Installer source commit: %s\n\n' "$COMMIT"
+            printf 'Matching Casper kernel/initrd and a netboot.xyz custom menu are included. Private GitHub assets must be staged to a trusted LAN HTTP server; see NETBOOT.md. Never embed a GitHub token in boot URLs.\n\n'
             printf 'Download **all** .partNNN files, SHA256SUMS, and assemble.py into one folder, then run: python3 assemble.py. Write the reconstructed ISO to USB, not the parts.\n\n'
             printf 'This is an interactive Ubuntu Desktop installer, not an offline appliance. Disk and account setup remain interactive. Network access, credentials and configuration are still required; remediation stays disabled. See INSTALL.md and BUILD.txt.\n\n'
             printf 'BIOS/UEFI VM boot reached live userspace; physical hardware and a complete installed-system first boot are not validated by this release job.\n'
           } > notes.md
-          gh release create "$tag" --draft "${flags[@]}" --title "PC installer $tag" --notes-file notes.md
-          gh release upload "$tag" release/*
+          # A deterministic Ubuntu refresh can resume an interrupted draft without moving a tag.
+          gh api --paginate --slurp "repos/$GH_REPO/releases?per_page=100" > existing.json
+          existing="$(jq -c --arg tag "$tag" '.[][] | select(.tag_name == $tag)' existing.json)"
+          if [[ -n "$existing" && "$refresh" == 1 ]]; then
+            [[ "$(jq -r '.target_commitish' <<< "$existing")" == "$COMMIT" ]] || { echo "ERROR: existing release targets different source"; exit 1; }
+            if [[ "$(jq -r '.draft' <<< "$existing")" == false ]]; then
+              echo "Already published $tag; not overwriting immutable release assets"
+              exit 0
+            fi
+          else
+            gh release create "$tag" --draft "${flags[@]}" --title "PC installer $tag" --notes-file notes.md
+          fi
+          gh release upload "$tag" release/* --clobber
           gh release download "$tag" --dir downloaded
           python3 downloaded/assemble.py downloaded --check-only
+          python3 -c 'from image.pxe import verify_assets; from pathlib import Path; verify_assets(Path("downloaded"))'
           # Require every uploaded asset (including metadata) to survive a download intact.
           for file in release/*; do cmp "$file" "downloaded/$(basename "$file")"; done
           if [[ "$stable" == 1 ]]; then
@@ -163,6 +221,6 @@ jobs:
             gh api --method PATCH "repos/$GH_REPO/releases/$release_id" --silent \
               -F draft=false -F prerelease=false -f make_latest=legacy
           else
-            gh release edit "$tag" --draft=false --prerelease --latest=false
+            gh release edit "$tag" --draft=false --prerelease="$prerelease" --latest=false
           fi
           gh release view "$tag" --json url --jq .url

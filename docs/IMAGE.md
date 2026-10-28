@@ -5,6 +5,11 @@ companion at the exact source commit in `provenance.json`. It targets an x86-64
 PC such as a Ryzen 7 with 16 GB RAM, an SSD and an RX 480. CPU inference is the
 baseline; RX 480 GPU acceleration is not promised.
 
+For network boot through netboot.xyz, see [NETBOOT.md](NETBOOT.md). Releases
+include matching Casper kernel/initrd and a custom iPXE menu. Private assets
+are synced by a credentialed LAN staging host, not fetched with tokens in
+PXE URLs. You cannot boot a private repository URL directly.
+
 ## Download and make a USB installer
 
 Use the repository's **Releases** page:
@@ -120,6 +125,8 @@ quality checks before downloading an ISO. Release builds run on:
   for that branch commit, never moves a stable tag, and never marks it latest.
 - Manual dispatch after the workflow is on the default branch: build-only by
   default, with optional validation-prerelease publication.
+- The Ubuntu-refresh schedule: publishes the newest supported point-release
+  image when that source/upstream combination has not been published.
 
 Use a unique validation branch for each trial, for example
 `git push origin HEAD:refs/heads/image-validation/my-trial`. This does not merge
@@ -132,9 +139,46 @@ timeout, and checks for 26 GB free before download. It reclaims the preinstalled
 Android, .NET and GHC SDK directories only on disposable GitHub-hosted runners,
 never on a self-hosted machine. Local ARM Macs are not the
 preferred full-build host. If runner capacity is insufficient, select a larger
-hosted runner; do not silently skip build or boot checks. The Ubuntu point
-release is explicit in the workflow (currently 24.04.5.1); update it through a
-reviewed change when it leaves the signed upstream manifest.
+hosted runner; do not silently skip build or boot checks. The default upstream
+is the latest **Ubuntu 24.04 Desktop amd64 point release in its authenticated
+SHA256SUMS**, including respins such as 24.04.5.1. Manual builds can request a
+specific version still listed in that signed manifest. No automatic 26.04,
+Server, beta/RC or other architecture upgrade is performed.
+
+### Automatic Ubuntu point-release refreshes
+
+`Ubuntu point release refresh` checks the signed manifest daily at 07:23 UTC,
+or on manual dispatch. It sorts versions numerically (not directory dates or
+string order), binds the selected version/digest to the exact source commit,
+and calls the same quality/build/boot/publish pipeline. The download is
+authenticated again; a changed digest between detection and download fails.
+Bad signatures, missing supported images and GitHub API errors fail explicitly.
+
+Production refresh releases use
+`ubuntu-<point-version>-<source12>-<upstream-digest12>` tags, for example
+`ubuntu-24.04.5.1-012345abcdef-4da4a0c9035d`. They are published normal releases
+but never move the latest application-semver release or reuse an application
+`vX.Y.Z` tag. The upstream version, hash and source commit identify an immutable
+build: daily repeats skip an already published identity, while a changed
+upstream digest or source commit permits a new build. Only the newest supported
+point release is selected, not every historical ISO in the manifest.
+
+Discovery and image builds have concurrency guards. Interrupted Ubuntu-refresh
+drafts resume under the same deterministic tag; published assets are never
+replaced. A newly merged application PR may release the same Ubuntu point
+version under its own semver tag; the refresh channel is a separate identity.
+
+**Schedules run only once the workflow is on the default branch (`main`).**
+Keeping this PR open means no production polling is active yet. For premerge
+proof, pushing an `ubuntu-validation/**` branch exercises the actual signed
+discovery and pipeline with a deterministic `image-validation-ubuntu-*`
+prerelease tag. Rerunning that workflow demonstrates its skip behavior.
+No production refresh or stable application tag is created by that test.
+
+The manifest comes from [Ubuntu's official 24.04 release directory](https://releases.ubuntu.com/24.04/).
+Authentication follows [Ubuntu's image-verification guidance](https://ubuntu.com/tutorials/how-to-verify-ubuntu),
+using the full pinned CD image signing fingerprint above, not trusting a
+checksum downloaded over HTTPS alone.
 
 Successful builds retain transport artifacts in Actions for seven days.
 Publication creates a draft, uploads assets, downloads and compares every

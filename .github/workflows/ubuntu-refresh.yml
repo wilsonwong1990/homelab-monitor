@@ -1,0 +1,56 @@
+name: Ubuntu point release refresh
+on:
+  schedule:
+    - cron: "23 7 * * *"
+  workflow_dispatch:
+  push:
+    branches: ["ubuntu-validation/**"]
+permissions:
+  contents: read
+concurrency:
+  group: ubuntu-refresh-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  discover:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    outputs:
+      needed: ${{ steps.discover.outputs.needed }}
+      version: ${{ steps.discover.outputs.version }}
+      sha256: ${{ steps.discover.outputs.sha256 }}
+      tag: ${{ steps.discover.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Discover newest authenticated point release and skip completed builds
+        id: discover
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          COMMIT: ${{ github.sha }}
+          REF: ${{ github.ref }}
+        run: |
+          bash image/ubuntu-manifest.sh build/upstream
+          flags=()
+          [[ "$REF" == refs/heads/main ]] || flags=(--validation)
+          python3 image/ubuntu_release.py build/upstream/SHA256SUMS --commit "$COMMIT" "${flags[@]}" > selection
+          cat selection >> "$GITHUB_OUTPUT"
+          tag="$(sed -n 's/^tag=//p' selection)"
+          # Listing errors fail the run; an unavailable API is not an absent release.
+          gh api --paginate --slurp "repos/$GH_REPO/releases?per_page=100" > releases.json
+          if jq -e --arg tag "$tag" 'any(.[][]; .tag_name == $tag and .draft == false)' releases.json >/dev/null; then
+            echo "Already published $tag"
+            echo "needed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "needed=true" >> "$GITHUB_OUTPUT"
+          fi
+  release:
+    needs: discover
+    if: needs.discover.outputs.needed == 'true'
+    uses: ./.github/workflows/image-release.yml
+    permissions:
+      contents: write
+    with:
+      ubuntu_version: ${{ needs.discover.outputs.version }}
+      ubuntu_sha256: ${{ needs.discover.outputs.sha256 }}
+      release_tag: ${{ needs.discover.outputs.tag }}
+      publish: true
