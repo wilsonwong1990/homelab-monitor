@@ -19,9 +19,12 @@ def digest(path):
 
 def validate_url(url):
     parsed = urlsplit(url)
+    if parsed.port is not None and not 0 < parsed.port <= 65535:
+        raise ValueError("invalid LAN URL port")
     if (parsed.scheme not in ("http", "https") or not parsed.hostname
             or parsed.username is not None or parsed.password is not None
             or parsed.query or parsed.fragment
+            or parsed.netloc.endswith(":")
             or not re.fullmatch(r"https?://[A-Za-z0-9.:\[\]-]+(?:/[A-Za-z0-9._/-]*)?", url)
             or any(part in (".", "..") for part in parsed.path.split("/"))):
         raise ValueError("expected a plain HTTP(S) LAN URL without credentials, query, fragments or iPXE expressions")

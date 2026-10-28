@@ -36,7 +36,7 @@ class PxeTests(unittest.TestCase):
     def test_reject_credential_urls_and_ipxe_injection(self):
         for url in ("https://user:token@host/boot", "http://host/?token=secret", "http://host/#secret",
                     "http://host/${token}", "http://host/;reboot", "http://host/\nboot", "file:///tmp/iso",
-                    "http://host/../private", "http://host/a b"):
+                    "http://host/../private", "http://host/a b", "http://host:99999", "http://host:", "http://host:bad"):
             with self.subTest(url=url), self.assertRaises(ValueError):
                 validate_url(url)
         self.assertIn("set asset_base http://192.168.1.2:8080/homelab/test", render_menu("http://192.168.1.2:8080/homelab/test"))
