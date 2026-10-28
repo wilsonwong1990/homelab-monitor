@@ -47,6 +47,8 @@ jobs:
           test "$available" -ge 26000000000 || { echo "Need 26 GB free; use a larger hosted runner"; exit 1; }
           sudo apt-get update -qq
           sudo apt-get install -y -qq xorriso gnupg qemu-system-x86 ovmf
+          test -r /usr/share/OVMF/OVMF_CODE_4M.fd
+          test -r /usr/share/OVMF/OVMF_VARS_4M.fd
       - name: Authenticate and download Ubuntu
         run: bash image/download-ubuntu.sh build/upstream 24.04.5.1
       - name: Build and verify exact commit
