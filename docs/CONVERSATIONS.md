@@ -14,6 +14,47 @@ channel. Alerts and approvals stay in their dedicated channel.
 | Which model answers? | **Local by default** (`!ask`); cloud only when explicitly asked (`!agent NAME`) | Monitor and home data never leave the host unless you type them into an `!agent` message yourself. |
 | Can chat change things? | **No** | Every route is read-only. Changes still go through `!propose`/`!approve` (allowlisted low-risk runbooks) or the GitHub lane. |
 
+## Discord vs Slack in detail
+
+Both are hosted SaaS, so messages live on the vendor's servers either way.
+Both connect outbound (Discord gateway, Slack Socket Mode), so neither needs an
+inbound port opened to the homelab.
+
+| | Discord | Slack (free plan) |
+|---|---|---|
+| Implemented and tested here | Yes | No; needs a new transport |
+| Message history | Unlimited | 90 days |
+| Buttons, threads, slash commands | Yes | Yes (Block Kit is a bit nicer) |
+| Mobile push notifications | Good | Good |
+
+**Recommendation:** stay on Discord. Switch only if Slack is where you already
+spend your day. If so, add a Slack Socket Mode transport that calls the same
+`converse()` router and enforces the same user/channel allowlist. Don't run both.
+
+## Can ACP agents use a local model?
+
+Possible, but on the current hardware the agentic jobs would be a poor experience.
+
+- Copilot CLI (copilot-acp-server) uses GitHub-hosted models only. Going local
+  means a different ACP-capable agent that can target Ollama. Check its current
+  ACP and Ollama support before relying on it.
+- Multi-step troubleshooting (chains of `kubectl`, Longhorn and Proxmox calls)
+  needs reliable tool calling and long context. In practice that is roughly a
+  20–30B-parameter model, which needs a 16–24 GB GPU.
+- An RX 480 (8 GB at most) fits roughly an 8B model. That's fine for
+  summarising evidence it's handed, but it tends to loop or invent results when
+  it has to drive tools itself.
+
+| Job | Model | Route |
+|---|---|---|
+| Read-only Q&A over data the gateway already collected | Local Ollama | `!ask` |
+| Agentic, multi-step investigation | Copilot via ACP | `!agent NAME` |
+| Fully local agents | Local 20–30B model on a ~24 GB GPU (e.g. used RTX 3090) | Future: point an `agents` entry at a local ACP agent |
+
+To get more out of `!ask` without a bigger model, have the gateway gather fixed,
+read-only evidence (pod status, Longhorn volume health, recent cluster events)
+and pass it to the local model. Don't let the model choose the tools.
+
 ## Routes
 
 | Command | Backend | Data that leaves the host |
