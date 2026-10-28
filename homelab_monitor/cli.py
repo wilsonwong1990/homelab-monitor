@@ -34,6 +34,9 @@ def main(argv=None):
     executor.add_argument("--kill-switch", required=True)
     bot = commands.add_parser("discord")
     bot.add_argument("--identity", required=True)
+    bot.add_argument("--chat-config", help="optional conversation routes (!ask, !home, !agent)")
+    chat = commands.add_parser("validate-chat")
+    chat.add_argument("path")
     github = commands.add_parser("approve-github")
     github.add_argument("id")
     github.add_argument("digest")
@@ -47,7 +50,12 @@ def main(argv=None):
             return 0
         if args.command == "discord":
             from .discord_bot import run_bot
-            run_bot(args.identity, args.db, args.socket)
+            run_bot(args.identity, args.db, args.socket, args.chat_config)
+            return 0
+        if args.command == "validate-chat":
+            from .conversation import load_chat_config
+            load_chat_config(args.path)
+            print("conversation config valid; credentials and live access not tested")
             return 0
         if args.command == "approve-github":
             result = rpc(args.socket, {

@@ -33,6 +33,17 @@ def model_settings(config):
     return settings
 
 
+def verify_local_model(settings):
+    """Return the Ollama origin only after confirming the model is not remote-backed."""
+    origin = settings.get("url", "http://127.0.0.1:11434").rstrip("/")
+    metadata = request_json(origin + "/api/show", body={"model": settings["name"]},
+                            timeout=min(settings.get("timeout", 120), 10))
+    if (not isinstance(metadata, dict) or metadata.get("remote_host") or metadata.get("remote_model")
+            or not isinstance(metadata.get("model_info"), dict) or not metadata["model_info"]):
+        raise TransportError("model is remote-backed or lacks verifiable local metadata; no evidence sent")
+    return origin
+
+
 def diagnose(config, evidence):
     settings = model_settings(config)
     kind = evidence.get("kind", "http")
@@ -42,12 +53,7 @@ def diagnose(config, evidence):
         context = (root / skill / "SKILL.md").read_text()[:3000]
     except OSError:
         raise ConfigurationError(f"canonical skill unavailable: {skill}; configure skill_root") from None
-    origin = settings.get("url", "http://127.0.0.1:11434").rstrip("/")
-    metadata = request_json(origin + "/api/show", body={"model": settings["name"]},
-                            timeout=min(settings.get("timeout", 120), 10))
-    if (not isinstance(metadata, dict) or metadata.get("remote_host") or metadata.get("remote_model")
-            or not isinstance(metadata.get("model_info"), dict) or not metadata["model_info"]):
-        raise TransportError("model is remote-backed or lacks verifiable local metadata; no evidence sent")
+    origin = verify_local_model(settings)
     prompt = {
         "role": "system",
         "content": (

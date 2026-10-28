@@ -1,4 +1,4 @@
-"""Approval transport only; the executor owns authorization and credentials."""
+"""Discord gateway: approval transport plus read-only conversation routes; the executor owns authorization and credentials."""
 
 from __future__ import annotations
 
@@ -10,25 +10,84 @@ import os
 import sqlite3
 import time
 
-from .core import ConfigurationError, open_db, snapshot
+from .acp import ACPError, prompt_agent
+from .conversation import MAX_QUESTION, ask_local, home_states, load_chat_config
+from .core import ConfigurationError, TransportError, open_db, snapshot
 from .executor import Denied, discord_actor, rpc
 
 LOG = logging.getLogger(__name__)
 
 
-def run_bot(settings_path, observer_path, socket_path):
+HELP = ("Read: !status, !read CHECK, !home [ENTITY], !ask QUESTION (local model), "
+        "!agents, !agent NAME QUESTION (cloud agent; only your text is sent). "
+        "Approvals channel only: !propose RUNBOOK [ISSUE], !approve ID SHA256. "
+        "Configuration/higher-impact changes require GitHub.")
+
+
+def authorize(settings, chat, context):
+    """Return True for the approvals channel, False for a chat-only channel; raise Denied otherwise."""
+    try:
+        discord_actor({"discord": settings}, context)
+        return True
+    except Denied:
+        if (chat and context["user_id"] in settings.get("allowed_user_ids", [])
+                and context["guild_id"] == settings.get("guild_id")
+                and context["channel_id"] in chat.get("channel_ids", [])):
+            return False
+        raise
+
+
+async def converse(content, chat, observer_path):
+    """Read-only conversational routes. Returns None for commands handled elsewhere."""
+    parts = content.split(maxsplit=2)
+    command = parts[0] if parts else ""
+    if command not in {"!ask", "!home", "!agents", "!agent"}:
+        return None
+    if not chat:
+        raise ConfigurationError("conversation routes are not configured (--chat-config)")
+    if command == "!home":
+        states = await asyncio.to_thread(home_states, chat, content.split()[1:] or None)
+        return json.dumps(states, indent=2)
+    if command == "!agents":
+        agents = chat.get("agents", {})
+        return "Cloud agents (prompts leave this host): " + (", ".join(sorted(agents)) or "none configured")
+    if command == "!ask" and len(parts) > 1:
+        question = content.split(maxsplit=1)[1]
+        with contextlib.closing(open_db(observer_path, readonly=True)) as db:
+            rows = snapshot(db)
+        states = await asyncio.to_thread(home_states, chat) if chat.get("home_assistant") else {}
+        answer = await asyncio.to_thread(ask_local, chat, question, rows, states)
+        return "Local model (not verified):\n" + answer
+    if command == "!agent" and len(parts) == 3:
+        name, question = parts[1], parts[2]
+        agent = chat.get("agents", {}).get(name)
+        if agent is None:
+            raise ConfigurationError("unknown agent")
+        if len(question) > MAX_QUESTION:
+            raise ConfigurationError(f"question exceeds {MAX_QUESTION} characters")
+        text, rejected = await prompt_agent(agent["host"], agent["port"], question,
+                                            cwd=agent.get("cwd", "/sandbox"),
+                                            timeout=agent.get("timeout", 180))
+        note = f"; {rejected} tool permission request(s) rejected" if rejected else ""
+        return f"Cloud agent {name} (read-only{note}):\n" + (text.strip() or "(no text returned)")
+    return HELP
+
+
+def run_bot(settings_path, observer_path, socket_path, chat_path=None):
     try:
         import discord
     except ImportError:
         raise ConfigurationError("Discord bot requires: pip install '.[discord]'") from None
     with open(settings_path) as source:
         settings = json.load(source)
+    chat = load_chat_config(chat_path) if chat_path else None
     if not os.environ.get("DISCORD_BOT_TOKEN"):
         raise ConfigurationError("DISCORD_BOT_TOKEN is required")
     intents = discord.Intents.default()
     intents.message_content = True
     client = discord.Client(intents=intents, allowed_mentions=discord.AllowedMentions.none())
     cooldown = {}
+    busy = set()
 
     @client.event
     async def on_ready():
@@ -41,7 +100,7 @@ def run_bot(settings_path, observer_path, socket_path):
         context = {"user_id": str(message.author.id), "guild_id": str(message.guild.id),
                    "channel_id": str(message.channel.id)}
         try:
-            discord_actor({"discord": settings}, context)
+            approvals = authorize(settings, chat, context)
         except Denied:
             return
         if not message.content.startswith("!"):
@@ -51,8 +110,17 @@ def run_bot(settings_path, observer_path, socket_path):
             return
         cooldown[context["user_id"]] = time.monotonic()
         parts = message.content.split()
+        if context["user_id"] in busy:
+            await message.channel.send("A previous request is still running; wait for it to finish.")
+            return
+        busy.add(context["user_id"])
         try:
-            if parts == ["!status"]:
+            routed = await converse(message.content, chat, observer_path)
+            if routed is not None:
+                response = routed
+            elif parts and parts[0] in {"!propose", "!approve"} and not approvals:
+                response = "Proposals and approvals are only accepted in the approvals channel."
+            elif parts == ["!status"]:
                 with contextlib.closing(open_db(observer_path, readonly=True)) as db:
                     rows = snapshot(db)
                 response = json.dumps(rows, indent=2)
@@ -81,11 +149,12 @@ def run_bot(settings_path, observer_path, socket_path):
                     "lane": "discord", "context": context})
                 response = json.dumps(result)
             else:
-                response = ("Commands: !status, !read CHECK, !propose RUNBOOK [ISSUE], "
-                            "!approve ID SHA256. Configuration/higher-impact changes require GitHub.")
-        except (Denied, ConfigurationError, ValueError, OSError, sqlite3.Error) as error:
+                response = HELP
+        except (Denied, ConfigurationError, TransportError, ACPError, ValueError, OSError, sqlite3.Error) as error:
             LOG.warning("Discord request rejected: %s", error)
             response = f"Request rejected or unavailable: {error}. No automatic retry."
+        finally:
+            busy.discard(context["user_id"])
         # Fixed data can still contain Markdown; mentions are disabled at the transport.
         if len(response) > 7600:
             response = "Response exceeds Discord display limit; use the local status command or read-only MCP bridge."
