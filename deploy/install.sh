@@ -2,7 +2,7 @@
 # Install or upgrade the homelab monitoring companion on Ubuntu 24.04+/Debian 13+
 # (server or desktop). Idempotent. Never overwrites existing configuration or
 # secrets, never enables execution, and never writes sudoers.
-# See examples/monitoring/DEPLOY.md.
+# See docs/DEPLOY.md.
 set -euo pipefail
 umask 022
 
@@ -17,7 +17,7 @@ CORE_UNITS=(homelab-monitor@monitor.service homelab-monitor@notify.service homel
 ALL_UNITS=("${CORE_UNITS[@]}" homelab-discord.service homelab-executor.service)
 SLEEP_TARGETS=(sleep.target suspend.target hibernate.target hybrid-sleep.target)
 
-SOURCE="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
+SOURCE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 REF=HEAD
 INSTALL_OLLAMA=0
 MODEL=""
@@ -183,7 +183,7 @@ write_env_if_absent() {
 }
 
 install_configuration() {
-  local ex="$RELEASE_DIR/examples/monitoring"
+  local ex="$RELEASE_DIR/examples"
   install_if_absent "$ex/monitoring.example.json" "$ETC/monitoring.json" homelab-observe 0640
   install_if_absent "$ex/execution-policy.example.json" "$ETC/execution-policy.json" homelab-approve 0640
   install_if_absent "$ex/discord-identity.example.json" "$ETC/discord-identity.json" homelab-observe 0640
@@ -207,7 +207,7 @@ install_units() {
   log "installing systemd units (customize with 'systemctl edit UNIT', not by editing these files)"
   local unit
   for unit in homelab-monitor@.service homelab-discord.service homelab-executor.service; do
-    install -o root -g root -m 0644 "$RELEASE_DIR/examples/monitoring/$unit" "$UNIT_DIR/$unit"
+    install -o root -g root -m 0644 "$RELEASE_DIR/systemd/$unit" "$UNIT_DIR/$unit"
   done
   systemctl daemon-reload
 }
@@ -351,9 +351,9 @@ cat <<EOF
 Installed release $RELEASE_ID at $PREFIX.
 Next:
   1. Edit $ETC/monitoring.json and $ETC/{monitor,notify}.env (replace every placeholder).
-  2. sudo $PREFIX/examples/monitoring/deploy/smoke-test.sh --pre-enable
-  3. sudo $PREFIX/examples/monitoring/deploy/install.sh --source $SOURCE --ref $RELEASE_ID --enable
-  4. sudo $PREFIX/examples/monitoring/deploy/smoke-test.sh --benchmark
-The Discord approval bot and executor stay disabled; see examples/monitoring/DEPLOY.md.
+  2. sudo $PREFIX/deploy/smoke-test.sh --pre-enable
+  3. sudo $PREFIX/deploy/install.sh --source $SOURCE --ref $RELEASE_ID --enable
+  4. sudo $PREFIX/deploy/smoke-test.sh --benchmark
+The Discord approval bot and executor stay disabled; see docs/DEPLOY.md.
 EOF
 exit "$status"

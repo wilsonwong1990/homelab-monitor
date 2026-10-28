@@ -39,7 +39,7 @@ class Fixture(unittest.TestCase):
 
 class MonitoringTests(Fixture):
     def test_examples_validate(self):
-        config = core.load_config("examples/monitoring/monitoring.example.json")
+        config = core.load_config("examples/monitoring.example.json")
         self.assertEqual(len(config["checks"]), 4)
         investigation.model_settings(config)
 

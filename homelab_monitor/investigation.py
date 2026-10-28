@@ -37,7 +37,7 @@ def diagnose(config, evidence):
     settings = model_settings(config)
     kind = evidence.get("kind", "http")
     skill = {"proxmox": "proxmox", "unifi": "unifi"}.get(kind, "monitoring")
-    root = Path(config.get("skill_root", Path(__file__).resolve().parent.parent / ".github/skills"))
+    root = Path(config.get("skill_root", Path(__file__).resolve().parent.parent / "skills"))
     try:
         context = (root / skill / "SKILL.md").read_text()[:3000]
     except OSError:

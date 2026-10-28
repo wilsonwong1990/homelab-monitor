@@ -1,8 +1,18 @@
-# Local-first monitoring companion
+# homelab-monitor
 
+Local-first monitoring companion for
+[homelab-assistant-agent](https://github.com/wilsonwong1990/homelab-assistant-agent).
 This is an executable pilot, not a deployed monitoring installation. It adds
 deterministic detection, persistent incident delivery, local-model analysis,
-and hybrid approval to the existing assistant. It neither provisions accounts
+and hybrid approval to the assistant.
+
+## Skills
+
+The assistant repository owns the canonical skills. `skills/` holds pinned,
+read-only copies of the ones investigation uses (`monitoring`, `proxmox`,
+`unifi`); `skills/SOURCE` records the upstream commit. To pick up upstream
+changes, run `scripts/sync-skills.sh --ref <commit>` and commit the result. CI
+fails if `skills/` drifts from the pinned commit. Never edit the copies here. It neither provisions accounts
 nor grants permissions. Execution ships **disabled with an empty allowlist**.
 
 ## Architecture
@@ -70,7 +80,7 @@ are external services and receive the selected notification/proposal content.
 ## Install and configure
 
 For a scripted host install, upgrade/rollback, smoke test, OS choice, or a
-bootable desktop installer image, see [DEPLOY.md](DEPLOY.md). The manual steps
+bootable desktop installer image, see [docs/DEPLOY.md](docs/DEPLOY.md). The manual steps
 below are for development or other layouts.
 
 Use Python 3.9+ from this source checkout:
@@ -79,16 +89,16 @@ Use Python 3.9+ from this source checkout:
 python3 -m venv .venv
 .venv/bin/python -m pip install --upgrade pip
 .venv/bin/python -m pip install -e '.[discord]'
-cp examples/monitoring/monitoring.example.json monitoring.json
-cp examples/monitoring/execution-policy.example.json execution-policy.json
-cp examples/monitoring/discord-identity.example.json discord-identity.json
+cp examples/monitoring.example.json monitoring.json
+cp examples/execution-policy.example.json execution-policy.json
+cp examples/discord-identity.example.json discord-identity.json
 .venv/bin/python -m homelab_monitor --config monitoring.json validate
 ```
 
 Replace placeholders before polling. Local configuration names and `state/`
-are gitignored. The package is installed editable so `.github/skills/` remains
-the source of truth. If deployed without this source layout, set `skill_root`
-in `monitoring.json` to an absolute, read-only canonical `.github/skills` path.
+are gitignored. Investigation reads the vendored `skills/` directory. If deployed
+without this source layout, set `skill_root` in `monitoring.json` to an absolute,
+read-only directory containing `monitoring/`, `proxmox/` and `unifi/` skills.
 Missing skills fail investigation explicitly; they do not stop alerts.
 
 - Create source-enforced read-only accounts/tokens. A user named "observer" or
@@ -180,8 +190,8 @@ fallbacks, hooks, optional external memory, and egress on the installed version.
 Do not reuse an unrestricted personal profile for unattended monitoring.
 Set all inference routes to your local endpoint or disable unused features.
 
-Reference/link this checkout's canonical `.github/skills/` in the profile's
-skills directory and apply `.github/skills/monitoring/SKILL.md` as the safety
+Reference/link the canonical `.github/skills/` from homelab-assistant-agent in
+the profile's skills directory and apply its `monitoring/SKILL.md` as the safety
 policy alongside domain skills. Keep execution disabled in the Hermes identity:
 no sudo, execution socket access, infrastructure write tokens, terminal-backed
 remediation, or writable source MCPs. Permit only the read-only observer tools
@@ -352,7 +362,7 @@ the Discord lane.
 
 ```bash
 python3 -m unittest discover -s tests -v
-python3 -m homelab_monitor --config examples/monitoring/monitoring.example.json validate
+python3 -m homelab_monitor --config examples/monitoring.example.json validate
 ```
 
 Tests use local HTTP fixtures and mocked external transports/side effects;

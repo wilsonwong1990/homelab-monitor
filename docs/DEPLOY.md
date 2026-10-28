@@ -2,7 +2,7 @@
 
 This runbook turns a spare PC (here: Ryzen 7, 16 GB RAM, RX 480) into an
 always-on monitor. You can still use it as a desktop. It complements the
-[operator guide](README.md), which explains the design, permissions and approval
+[operator guide](../README.md), which explains the design, permissions and approval
 model. Nothing here enables remediation: execution stays disabled until you
 approve a runbook through GitHub.
 
@@ -45,7 +45,7 @@ can't send the alert.
 - **Suspend stops monitoring.** `--no-sleep` (applied automatically by the
   image) masks suspend/hibernate. Screen blanking and locking still work.
 - Shutting the PC down also stops alerts. Configure an external heartbeat
-  observer (see [README](README.md#run-and-inspect)) if that matters.
+  observer (see [README](../README.md#run-and-inspect)) if that matters.
 - The monitor itself has no GUI. Discord is the alert/approval UI, and
   `homelab_monitor status` or Hermes provide manual inspection.
 
@@ -68,7 +68,7 @@ No secrets or private infrastructure details are placed in the image.
 # On any Linux/macOS machine with git and xorriso (apt/brew install xorriso)
 curl -LO https://releases.ubuntu.com/24.04/ubuntu-24.04.3-desktop-amd64.iso   # use the current point release
 curl -LO https://releases.ubuntu.com/24.04/SHA256SUMS
-examples/monitoring/image/build-iso.sh --iso ubuntu-24.04.3-desktop-amd64.iso --ref main
+image/build-iso.sh --iso ubuntu-24.04.3-desktop-amd64.iso --ref main
 ```
 
 Write the resulting `homelab-monitor-<commit>.iso` to a USB stick with
@@ -86,9 +86,9 @@ Then continue at [Configure](#configure).
 
 ```bash
 sudo apt install -y git
-git clone https://github.com/wilsonwong1990/homelab-assistant-agent.git
-cd homelab-assistant-agent
-sudo examples/monitoring/deploy/install.sh --install-ollama --no-sleep   # omit --no-sleep on a server
+git clone https://github.com/wilsonwong1990/homelab-monitor.git   # private: authenticate first (gh auth login, or a read-only deploy key)
+cd homelab-monitor
+sudo deploy/install.sh --install-ollama --no-sleep   # omit --no-sleep on a server
 ```
 
 `install.sh` is idempotent and safe to rerun. It:
@@ -118,7 +118,7 @@ sudoedit /etc/homelab-monitor/monitor.env       # PROXMOX_AUTHORIZATION, UNIFI_R
 sudoedit /etc/homelab-monitor/notify.env        # DISCORD_WEBHOOK_URL
 ```
 
-Use read-only tokens as described in the [README](README.md#install-and-configure).
+Use read-only tokens as described in the [README](../README.md#install-and-configure).
 If your Proxmox/UniFi/HA certificates come from a private CA, add it to the OS
 trust store: copy it to `/usr/local/share/ca-certificates/` and run
 `update-ca-certificates`.
@@ -126,7 +126,7 @@ trust store: copy it to `/usr/local/share/ca-certificates/` and run
 ## Verify and enable
 
 ```bash
-S=/opt/homelab-monitor/examples/monitoring/deploy
+S=/opt/homelab-monitor/deploy
 sudo $S/smoke-test.sh --pre-enable --discord-test   # config, permissions, Ollama, one Discord test post
 sudo $S/install.sh --source /opt/homelab-monitor-src --enable   # Option B: --source <your clone>
 sleep 180
@@ -157,11 +157,11 @@ may still run on CPU.
 ```bash
 cd /opt/homelab-monitor-src   # or your clone
 sudo git fetch origin && sudo git checkout --detach origin/main   # review the diff first
-sudo /opt/homelab-monitor/examples/monitoring/deploy/install.sh --source "$PWD"
-sudo /opt/homelab-monitor/examples/monitoring/deploy/smoke-test.sh
+sudo /opt/homelab-monitor/deploy/install.sh --source "$PWD"
+sudo /opt/homelab-monitor/deploy/smoke-test.sh
 ```
 
-ISO installs point `origin` at the upstream GitHub repository; if you build images from a fork, run `sudo git -C /opt/homelab-monitor-src remote set-url origin <your-fork-url>` first.
+ISO installs point `origin` at the upstream GitHub repository. Because it is private, `git fetch` as root needs credentials: add a read-only deploy key for root, or fetch in your own clone and pass that with `--source`. If you build images from a fork, run `sudo git -C /opt/homelab-monitor-src remote set-url origin <your-fork-url>` first.
 
 Each commit becomes a new release directory. The configuration is validated
 with the new code *before* switching, and the state databases are backed up to
@@ -171,7 +171,7 @@ switch. The current release, the previous one and three older ones are kept.
 ## Roll back
 
 ```bash
-D=/opt/homelab-monitor/examples/monitoring/deploy
+D=/opt/homelab-monitor/deploy
 sudo $D/rollback.sh --list
 sudo $D/rollback.sh              # previous release
 sudo $D/rollback.sh 1a2b3c4d5e6f # a specific release
@@ -197,10 +197,10 @@ Incidents recorded after that backup are lost.
 Keep these off until the core monitor has run cleanly for a while:
 
 - **Discord approval bot / executor**: follow
-  [Hybrid approval](README.md#hybrid-approval). It needs a reviewed policy
+  [Hybrid approval](../README.md#hybrid-approval). It needs a reviewed policy
   change, an exact sudoers entry and `systemctl enable --now homelab-executor
   homelab-discord`.
-- **Hermes**: follow [Hermes and use from another system](README.md#hermes-and-use-from-another-system).
+- **Hermes**: follow [Hermes and use from another system](../README.md#hermes-and-use-from-another-system).
   The desktop session is a convenient place to run it interactively.
 
 ## Uninstall

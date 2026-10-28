@@ -53,7 +53,7 @@ mv -T "$PREFIX.new" "$PREFIX"
 [[ -n "$current" ]] && printf '%s\n' "$current" > "$RELEASES/.previous"
 # Unit files are shared across releases; reinstall the target's copies.
 for unit in homelab-monitor@.service homelab-discord.service homelab-executor.service; do
-  install -o root -g root -m 0644 "$target/examples/monitoring/$unit" "/etc/systemd/system/$unit"
+  install -o root -g root -m 0644 "$target/systemd/$unit" "/etc/systemd/system/$unit"
 done
 systemctl daemon-reload
 for unit in "${UNITS[@]}"; do

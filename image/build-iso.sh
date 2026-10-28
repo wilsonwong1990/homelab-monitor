@@ -4,7 +4,7 @@
 # records are replayed unchanged. Runs on Linux or macOS with xorriso and git.
 set -euo pipefail
 
-SOURCE="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
+SOURCE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 REF=HEAD
 ISO=""
 OUT=""
@@ -69,11 +69,11 @@ trap cleanup EXIT
 
 mkdir -p "$WORK/homelab"
 git -C "$SOURCE" update-ref "$TMP_REF" "$COMMIT"
-git -C "$SOURCE" bundle create --quiet "$WORK/homelab/homelab-assistant-agent.bundle" "$TMP_REF"
-git -C "$SOURCE" bundle verify --quiet "$WORK/homelab/homelab-assistant-agent.bundle"
+git -C "$SOURCE" bundle create --quiet "$WORK/homelab/homelab-monitor.bundle" "$TMP_REF"
+git -C "$SOURCE" bundle verify --quiet "$WORK/homelab/homelab-monitor.bundle"
 printf '%s\n' "$COMMIT" > "$WORK/homelab/ref"
 # Use the autoinstall file from the embedded commit, not the working tree.
-git -C "$SOURCE" show "$COMMIT:examples/monitoring/image/autoinstall.yaml" > "$WORK/autoinstall.yaml"
+git -C "$SOURCE" show "$COMMIT:image/autoinstall.yaml" > "$WORK/autoinstall.yaml"
 
 xorriso -indev "$ISO" -outdev "$OUT" \
   -map "$WORK/autoinstall.yaml" /autoinstall.yaml \
