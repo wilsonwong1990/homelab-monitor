@@ -84,10 +84,11 @@ relying on a physical deployment.
 ## Maintainer release workflow
 
 Normal PR CI runs unit tests, shell/workflow lint and Ubuntu host install,
-enable, upgrade and rollback checks. The installer workflow repeats those
-checks before downloading an ISO. It runs on:
+enable, upgrade and rollback checks. Installer-related PRs also build and
+boot-check the ISO (without publishing). The installer workflow repeats the
+quality checks before downloading an ISO. Release builds run on:
 
-- A reviewed `v*` tag: publishes a release for that exact existing tag.
+- A reviewed `vMAJOR.MINOR.PATCH` tag: publishes a release for that exact existing tag.
 - An `image-validation/**` branch push: publishes a clearly nonstable prerelease
   for that branch commit, never moves a stable tag, and never marks it latest.
 - Manual dispatch after the workflow is on the default branch: build-only by
@@ -99,7 +100,9 @@ the feature branch. Stable tagging is a separate human release decision after
 review; this pipeline does not merge PRs or create stable tags.
 
 The workflow uses an Ubuntu 24.04 x86-64 hosted runner, a 90-minute image-job
-timeout, and checks for 26 GB free before download. Local ARM Macs are not the
+timeout, and checks for 26 GB free before download. It reclaims the preinstalled
+Android, .NET and GHC SDK directories only on disposable GitHub-hosted runners,
+never on a self-hosted machine. Local ARM Macs are not the
 preferred full-build host. If runner capacity is insufficient, select a larger
 hosted runner; do not silently skip build or boot checks. The Ubuntu point
 release is explicit in the workflow (currently 24.04.3); update it through a

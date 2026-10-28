@@ -3,6 +3,12 @@ on:
   push:
     tags: ["v[0-9]*"]
     branches: ["image-validation/**"]
+  pull_request:
+    paths:
+      - "image/**"
+      - "deploy/**"
+      - "tests/test_image.py"
+      - ".github/workflows/*.yml"
   workflow_dispatch:
     inputs:
       publish:
@@ -27,8 +33,17 @@ jobs:
           fetch-depth: 0
       - name: Check capacity and install image tools
         run: |
-          # Standard hosted runners vary; fail before downloading rather than fill a disk.
+          # Only disposable hosted runners may have unused, preinstalled SDKs removed.
+          test "$RUNNER_ENVIRONMENT" = github-hosted
+          df -h .
+          for sdk in /usr/local/lib/android /usr/share/dotnet /opt/ghc; do
+            if [[ -d "$sdk" && ! -L "$sdk" ]]; then
+              du -sh "$sdk"
+              sudo rm -rf "$sdk"
+            fi
+          done
           available="$(df -B1 --output=avail . | tail -1)"
+          df -h .
           test "$available" -ge 26000000000 || { echo "Need 26 GB free; use a larger hosted runner"; exit 1; }
           sudo apt-get update -qq
           sudo apt-get install -y -qq xorriso gnupg qemu-system-x86 ovmf
@@ -104,6 +119,7 @@ jobs:
           python3 release/assemble.py release --check-only
           if [[ "$REF_TYPE" == tag ]]; then
             tag="$REF_NAME"
+            [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "Stable releases require vMAJOR.MINOR.PATCH"; exit 1; }
             flags=(--verify-tag)
             final_flags=(--prerelease=false --latest)
           else

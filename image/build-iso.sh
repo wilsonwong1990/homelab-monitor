@@ -68,6 +68,7 @@ COMMIT="$(git -C "$SOURCE" rev-parse --verify "${REF}^{commit}")" || die "cannot
 SHORT="${COMMIT:0:12}"
 OUT="${OUT:-homelab-monitor-$SHORT.iso}"
 [[ -e "$OUT" ]] && die "$OUT already exists"
+[[ -e "$OUT.provenance.json" ]] && die "$OUT.provenance.json already exists"
 if [[ -n "$(git -C "$SOURCE" status --porcelain --untracked-files=no)" ]]; then
   echo "WARN: uncommitted changes are NOT included; embedding commit $SHORT" >&2
 fi
