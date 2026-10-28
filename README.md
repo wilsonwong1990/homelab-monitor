@@ -83,6 +83,11 @@ For a scripted host install, upgrade/rollback, smoke test, OS choice, or a
 bootable desktop installer image, see [docs/DEPLOY.md](docs/DEPLOY.md). The manual steps
 below are for development or other layouts.
 
+[Installer downloads and release instructions](docs/IMAGE.md) describe the
+split ISO assets, checksum verification, interactive disk/account setup and
+network-dependent first boot. Images contain pinned source, not your tokens;
+monitoring still needs configuration and explicit enablement.
+
 Use Python 3.9+ from this source checkout:
 
 ```bash

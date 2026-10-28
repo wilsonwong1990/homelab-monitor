@@ -1,0 +1,127 @@
+name: Installer image
+on:
+  push:
+    tags: ["v[0-9]*"]
+    branches: ["image-validation/**"]
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: Publish a nonstable validation prerelease
+        type: boolean
+        default: false
+permissions:
+  contents: read
+concurrency:
+  group: installer-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  quality:
+    uses: ./.github/workflows/ci.yml
+  image:
+    needs: quality
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Check capacity and install image tools
+        run: |
+          # Standard hosted runners vary; fail before downloading rather than fill a disk.
+          available="$(df -B1 --output=avail . | tail -1)"
+          test "$available" -ge 26000000000 || { echo "Need 26 GB free; use a larger hosted runner"; exit 1; }
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq xorriso gnupg qemu-system-x86 ovmf
+      - name: Authenticate and download Ubuntu
+        run: bash image/download-ubuntu.sh build/upstream 24.04.3
+      - name: Build and verify exact commit
+        env:
+          COMMIT: ${{ github.sha }}
+        run: |
+          bash image/build-iso.sh --iso build/upstream/ubuntu-24.04.3-desktop-amd64.iso --ref "$COMMIT" --out build/homelab-monitor-"${COMMIT:0:12}".iso
+          # Free upstream space before the boot test and release packaging.
+          rm build/upstream/ubuntu-24.04.3-desktop-amd64.iso
+      - name: Boot the release ISO in BIOS and UEFI
+        env:
+          COMMIT: ${{ github.sha }}
+        run: |
+          bash image/boot-smoke.sh build/homelab-monitor-"${COMMIT:0:12}".iso bios build/bios-serial.log
+          bash image/boot-smoke.sh build/homelab-monitor-"${COMMIT:0:12}".iso uefi build/uefi-serial.log
+      - name: Package assets below GitHub's 2 GiB limit and verify reconstruction
+        env:
+          COMMIT: ${{ github.sha }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          SOURCE_URL: ${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }}
+        run: |
+          iso=build/homelab-monitor-"${COMMIT:0:12}".iso
+          python3 image/iso_tools.py split "$iso" build/release
+          python3 image/assemble.py build/release --check-only
+          cp "$iso.provenance.json" build/release/provenance.json
+          cp image/assemble.py build/release/assemble.py
+          cp docs/IMAGE.md build/release/INSTALL.md
+          cp build/upstream/SHA256SUMS build/release/UBUNTU-SHA256SUMS
+          cp build/upstream/SHA256SUMS.gpg build/release/UBUNTU-SHA256SUMS.gpg
+          cp build/upstream/ubuntu-cdimage.gpg build/release/ubuntu-cdimage.gpg
+          cp build/*-serial.log build/release/
+          printf 'Source: %s\nBuild and validation: %s\n' "$SOURCE_URL" "$RUN_URL" > build/release/BUILD.txt
+          rm "$iso"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: installer-${{ github.sha }}
+          path: build/release/*
+          compression-level: 0
+          if-no-files-found: error
+          retention-days: 7
+      - name: Preserve failed boot evidence
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: boot-failure-${{ github.run_id }}
+          path: build/*-serial.log
+          if-no-files-found: ignore
+  publish:
+    needs: image
+    if: github.event_name == 'push' || inputs.publish
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: installer-${{ github.sha }}
+          path: release
+      - name: Publish only after verifying uploaded release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
+          COMMIT: ${{ github.sha }}
+          RUN_ID: ${{ github.run_id }}
+          ATTEMPT: ${{ github.run_attempt }}
+        run: |
+          python3 release/assemble.py release --check-only
+          if [[ "$REF_TYPE" == tag ]]; then
+            tag="$REF_NAME"
+            flags=(--verify-tag)
+            final_flags=(--prerelease=false --latest)
+          else
+            tag="image-validation-$RUN_ID-$ATTEMPT"
+            flags=(--target "$COMMIT" --prerelease)
+            final_flags=(--prerelease --latest=false)
+          fi
+          {
+            printf 'Installer source commit: %s\n\n' "$COMMIT"
+            printf 'Download **all** .partNNN files, SHA256SUMS, and assemble.py into one folder, then run: python3 assemble.py. Write the reconstructed ISO to USB, not the parts.\n\n'
+            printf 'This is an interactive Ubuntu Desktop installer, not an offline appliance. Disk and account setup remain interactive. Network access, credentials and configuration are still required; remediation stays disabled. See INSTALL.md and BUILD.txt.\n\n'
+            printf 'BIOS/UEFI VM boot reached live userspace; physical hardware and a complete installed-system first boot are not validated by this release job.\n'
+          } > notes.md
+          gh release create "$tag" --draft "${flags[@]}" --title "PC installer $tag" --notes-file notes.md
+          gh release upload "$tag" release/*
+          gh release download "$tag" --dir downloaded
+          python3 downloaded/assemble.py downloaded --check-only
+          # Require every uploaded asset (including metadata) to survive a download intact.
+          for file in release/*; do cmp "$file" "downloaded/$(basename "$file")"; done
+          gh release edit "$tag" --draft=false "${final_flags[@]}"
+          gh release view "$tag" --json url --jq .url
