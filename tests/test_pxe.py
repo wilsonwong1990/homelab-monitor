@@ -58,6 +58,9 @@ class PxeTests(unittest.TestCase):
                     with urllib.request.urlopen(f"{base}/{path}") as response:
                         self.assertEqual(response.read(), data)
                 menu = (web / "homelab.ipxe").read_text()
+                # iPXE rejects scripts unless #!ipxe is the very first line.
+                self.assertTrue(menu.startswith("#!ipxe\n"))
+                self.assertTrue((web / "homelab/test-release/boot.ipxe").read_text().startswith("#!ipxe\n"))
                 self.assertIn(f"set asset_base {base}/homelab/test-release", menu)
                 install_menu = (web / "homelab/test-release/homelab.ipxe").read_text()
                 self.assertIn("--default cancel", install_menu)

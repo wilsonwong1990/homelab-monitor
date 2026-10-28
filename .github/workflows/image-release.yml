@@ -217,9 +217,14 @@ jobs:
           for file in release/*; do cmp "$file" "downloaded/$(basename "$file")"; done
           if [[ "$stable" == 1 ]]; then
             release_id="$(gh release view "$tag" --json databaseId --jq .databaseId)"
-            # Let GitHub order stable versions instead of completion order of concurrent builds.
+            # Only the highest published vX.Y.Z may be Latest; legacy ordering could pick an
+            # ubuntu-* refresh release, and completion order of concurrent builds is irrelevant.
+            highest="$({ jq -r '.[][] | select(.draft == false and .prerelease == false) | .tag_name' existing.json; echo "$tag"; } \
+              | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -1)"
+            latest=false
+            [[ "$highest" != "$tag" ]] || latest=true
             gh api --method PATCH "repos/$GH_REPO/releases/$release_id" --silent \
-              -F draft=false -F prerelease=false -f make_latest=legacy
+              -F draft=false -F prerelease=false -f make_latest="$latest"
           else
             gh release edit "$tag" --draft=false --prerelease="$prerelease" --latest=false
           fi

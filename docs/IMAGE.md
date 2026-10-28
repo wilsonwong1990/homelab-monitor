@@ -101,8 +101,9 @@ after a tag-name collision; a rerun reuses the version already pointing at that
 commit, including annotated tags. There is deliberately no shared Actions
 concurrency group for version allocation: GitHub's single pending-slot behavior
 could otherwise drop a merge. Each assigned version has its own image-build
-concurrency group. GitHub selects latest stable releases using its legacy
-version-ordering mode, not whichever concurrent image upload finishes last.
+concurrency group. A stable release is marked Latest only when its tag is the
+highest published `vX.Y.Z`, so neither the completion order of concurrent
+uploads nor an `ubuntu-*` refresh release can take the Latest badge.
 
 The version workflow **calls the reusable installer workflow directly after
 pushing the tag**. Tags pushed by `GITHUB_TOKEN` do not trigger another workflow
@@ -142,7 +143,11 @@ preferred full-build host. If runner capacity is insufficient, select a larger
 hosted runner; do not silently skip build or boot checks. The default upstream
 is the latest **Ubuntu 24.04 Desktop amd64 point release in its authenticated
 SHA256SUMS**, including respins such as 24.04.5.1. Manual builds can request a
-specific version still listed in that signed manifest. No automatic 26.04,
+specific version listed in that signed manifest; the ISO is fetched from
+releases.ubuntu.com, then old-releases.ubuntu.com, and must match the signed
+digest. Ubuntu sometimes withdraws superseded ISOs from both while still listing
+them, in which case the download fails rather than substituting another build.
+No automatic 26.04,
 Server, beta/RC or other architecture upgrade is performed.
 
 ### Automatic Ubuntu point-release refreshes
