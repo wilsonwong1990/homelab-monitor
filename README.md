@@ -181,6 +181,15 @@ Use an observer on another host to check that heartbeat and delivery health.
 The pilot does not provision this independent observer. A local host cannot
 notify Discord during its own power or WAN outage without an independent path.
 
+## Conversations: one home entry point
+
+The same Discord bot can answer questions about the homelab and the house, not
+just send alerts. `!ask` (local Ollama over monitor and Home Assistant state),
+`!home` (allowlisted HA entities) and an opt-in `!agent NAME` route to ACP
+agents such as Copilot CLI on k3s are all read-only. Any ACP permission request
+is rejected. See [docs/CONVERSATIONS.md](docs/CONVERSATIONS.md) for the design,
+the data-egress boundary and setup.
+
 ## Hermes and use from another system
 
 `hermes-config.example.yaml` is a starting point for a **dedicated** local-only

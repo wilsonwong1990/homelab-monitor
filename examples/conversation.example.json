@@ -1,0 +1,22 @@
+{
+  "channel_ids": ["123456789012345678"],
+  "model": {
+    "url": "http://127.0.0.1:11434",
+    "name": "qwen3:4b",
+    "timeout": 120
+  },
+  "home_assistant": {
+    "url": "https://ha.example.internal",
+    "headers_env": {"Authorization": "HA_AUTHORIZATION"},
+    "entities": ["sensor.example_battery", "climate.example_thermostat", "lock.example_front_door"]
+  },
+  "agents": {
+    "k3s": {
+      "host": "copilot-acp-k3s.agents.svc.example.internal",
+      "port": 3000,
+      "cwd": "/sandbox",
+      "timeout": 180,
+      "cloud_egress_acknowledged": true
+    }
+  }
+}
