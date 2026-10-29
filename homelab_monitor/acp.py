@@ -17,6 +17,7 @@ LOG = logging.getLogger(__name__)
 PROTOCOL_VERSION = 1
 MAX_LINE = 1024 * 1024
 MAX_TEXT = 16000
+CLOSE_TIMEOUT = 1
 
 
 class ACPError(RuntimeError):
@@ -120,7 +121,12 @@ async def prompt_agent(host, port, prompt, *, cwd="/sandbox", timeout=180):
         finally:
             writer.close()
             try:
-                await writer.wait_closed()
+                await asyncio.wait_for(writer.wait_closed(), timeout=CLOSE_TIMEOUT)
+            except asyncio.TimeoutError:
+                writer.transport.abort()
+            except asyncio.CancelledError:
+                writer.transport.abort()
+                raise
             except OSError:
                 pass
 

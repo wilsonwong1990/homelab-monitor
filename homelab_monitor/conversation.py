@@ -23,6 +23,8 @@ ENTITY = re.compile(r"^[a-z_]+\.[a-z0-9_]+$")
 AGENT = re.compile(r"^[a-z0-9][a-z0-9-]{0,31}$")
 MAX_ENTITIES = 25
 MAX_QUESTION = 1500
+MAX_EVIDENCE = 6000
+EVIDENCE_SOURCE_BUDGET = 2800
 
 
 def _numeric_ids(values, name):
@@ -121,13 +123,63 @@ def home_states(config, entities=None):
     return states
 
 
+def _trim_evidence(value, limit=160):
+    if isinstance(value, str):
+        return value if len(value) <= limit else value[:limit - 1] + "…"
+    if isinstance(value, dict):
+        return {key: _trim_evidence(item, limit) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_trim_evidence(item, limit) for item in value]
+    return value
+
+
+def _compact_evidence_record(record):
+    compact = _trim_evidence(record)
+    encoded = json.dumps(compact, default=str, ensure_ascii=False)
+    if len(encoded) <= 900:
+        return compact
+    return {"record": encoded[:899] + "…"}
+
+
+def _budget_monitor_checks(rows):
+    selected, omitted = [], 0
+    for row in rows:
+        candidate = selected + [_compact_evidence_record(row)]
+        if len(json.dumps(candidate, default=str, ensure_ascii=False)) <= EVIDENCE_SOURCE_BUDGET:
+            selected.append(candidate[-1])
+        else:
+            omitted += 1
+    return selected, omitted
+
+
+def _budget_home_states(states):
+    selected, omitted = {}, 0
+    for entity, state in states.items():
+        entity = str(entity)[:100]
+        candidate = dict(selected)
+        candidate[entity] = _compact_evidence_record(state)
+        if len(json.dumps(candidate, default=str, ensure_ascii=False)) <= EVIDENCE_SOURCE_BUDGET:
+            selected = candidate
+        else:
+            omitted += 1
+    return selected, omitted
+
+
 def ask_local(config, question, monitor_rows, states):
     """Answer from local evidence only. Returns plain text; never executable."""
     if not question.strip() or len(question) > MAX_QUESTION:
         raise ConfigurationError(f"question must be 1-{MAX_QUESTION} characters")
     settings = model_settings(config)
     origin = verify_local_model(settings)
-    evidence = json.dumps({"monitor_checks": monitor_rows, "home": states}, default=str)[:6000]
+    monitor_checks, omitted_checks = _budget_monitor_checks(monitor_rows)
+    home, omitted_home = _budget_home_states(states)
+    evidence = json.dumps({
+        "monitor_checks": monitor_checks,
+        "home": home,
+        "omitted": {"monitor_checks": omitted_checks, "home": omitted_home},
+    }, default=str, ensure_ascii=False)
+    if len(evidence) > MAX_EVIDENCE:
+        raise TransportError("evidence exceeded size limit")
     data = request_json(
         origin + "/api/chat",
         body={

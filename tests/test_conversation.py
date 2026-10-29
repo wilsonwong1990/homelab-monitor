@@ -137,6 +137,100 @@ class ACPTests(unittest.TestCase):
         with self.assertRaisesRegex(acp.ACPError, "timed out"):
             asyncio.run(stall())
 
+    def test_close_timeout_aborts_transport(self):
+        class Reader:
+            def __init__(self):
+                self.lines = [
+                    b'{"jsonrpc":"2.0","id":1,"result":{}}\n',
+                    b'{"jsonrpc":"2.0","id":2,"result":{"sessionId":"s1"}}\n',
+                    b'{"jsonrpc":"2.0","id":3,"result":{}}\n',
+                ]
+
+            async def readline(self):
+                return self.lines.pop(0)
+
+        class Transport:
+            aborted = False
+
+            def abort(self):
+                self.aborted = True
+
+        class Writer:
+            def __init__(self):
+                self.transport = Transport()
+
+            def write(self, data):
+                pass
+
+            async def drain(self):
+                pass
+
+            def close(self):
+                pass
+
+            async def wait_closed(self):
+                await asyncio.Future()
+
+        async def scenario():
+            writer = Writer()
+            with patch.object(acp.asyncio, "open_connection", return_value=(Reader(), writer)), \
+                    patch.object(acp, "CLOSE_TIMEOUT", 0.01):
+                result = await acp.prompt_agent("agent", 1, "question", timeout=1)
+            return result, writer
+
+        result, writer = asyncio.run(scenario())
+        self.assertEqual(result, ("", 0))
+        self.assertTrue(writer.transport.aborted)
+
+    def test_cancelled_close_aborts_transport(self):
+        class Reader:
+            def __init__(self):
+                self.lines = [
+                    b'{"jsonrpc":"2.0","id":1,"result":{}}\n',
+                    b'{"jsonrpc":"2.0","id":2,"result":{"sessionId":"s1"}}\n',
+                    b'{"jsonrpc":"2.0","id":3,"result":{}}\n',
+                ]
+
+            async def readline(self):
+                return self.lines.pop(0)
+
+        class Transport:
+            aborted = False
+
+            def abort(self):
+                self.aborted = True
+
+        class Writer:
+            def __init__(self):
+                self.transport = Transport()
+                self.closing = asyncio.Event()
+
+            def write(self, data):
+                pass
+
+            async def drain(self):
+                pass
+
+            def close(self):
+                pass
+
+            async def wait_closed(self):
+                self.closing.set()
+                await asyncio.Future()
+
+        async def scenario():
+            writer = Writer()
+            with patch.object(acp.asyncio, "open_connection", return_value=(Reader(), writer)):
+                task = asyncio.create_task(acp.prompt_agent("agent", 1, "question", timeout=5))
+                await writer.closing.wait()
+                task.cancel()
+                with self.assertRaises(asyncio.CancelledError):
+                    await task
+            return writer
+
+        writer = asyncio.run(scenario())
+        self.assertTrue(writer.transport.aborted)
+
 
 class ConfigTests(unittest.TestCase):
     def setUp(self):
@@ -210,6 +304,25 @@ class HomeAndAskTests(unittest.TestCase):
                 conversation.ask_local(self.config, "q", [], {})
             chat.assert_not_called()
 
+    def test_ask_local_budgets_both_evidence_sources_before_serializing(self):
+        rows = [{"id": f"check-{index}", "status": "failing", "evidence": "detail " * 1000}
+                for index in range(20)]
+        states = {f"sensor.example_{index}": {"state": "available " * 100}
+                  for index in range(25)}
+        show = {"model_info": {"general.architecture": "qwen3"}}
+        answer = {"message": {"content": "answer"}}
+        with patch.object(conversation, "request_json", return_value=answer) as chat, \
+                patch("homelab_monitor.investigation.request_json", return_value=show):
+            conversation.ask_local(self.config, "summarize the system", rows, states)
+
+        encoded = chat.call_args.kwargs["body"]["messages"][1]["content"].removeprefix("Evidence:\n")
+        self.assertLessEqual(len(encoded), conversation.MAX_EVIDENCE)
+        evidence = json.loads(encoded)
+        self.assertTrue(evidence["monitor_checks"])
+        self.assertTrue(evidence["home"])
+        self.assertGreater(evidence["omitted"]["monitor_checks"], 0)
+        self.assertGreater(evidence["omitted"]["home"], 0)
+
 
 class GatewayTests(unittest.TestCase):
     settings = {"allowed_user_ids": ["1"], "guild_id": "2", "channel_id": "3"}
@@ -250,6 +363,13 @@ class GatewayTests(unittest.TestCase):
             reply = asyncio.run(discord_bot.converse("!agent k3s why is   longhorn degraded?", chat, "unused"))
         self.assertIn("Cloud agent k3s", reply)
         self.assertIn("2 tool permission request(s) rejected", reply)
+
+    def test_fit_response_truncates_with_marker_within_transport_budget(self):
+        response = "x" * 16000
+        fitted = discord_bot._fit_response(response)
+        self.assertEqual(len(fitted), discord_bot.RESPONSE_LIMIT)
+        self.assertTrue(fitted.endswith(discord_bot.RESPONSE_TRUNCATION_MARKER))
+        self.assertEqual(discord_bot._fit_response("short response"), "short response")
 
 
 if __name__ == "__main__":

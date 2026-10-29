@@ -22,6 +22,14 @@ HELP = ("Read: !status, !read CHECK, !home [ENTITY], !ask QUESTION (local model)
         "!agents, !agent NAME QUESTION (cloud agent; only your text is sent). "
         "Approvals channel only: !propose RUNBOOK [ISSUE], !approve ID SHA256. "
         "Configuration/higher-impact changes require GitHub.")
+RESPONSE_LIMIT = 7600
+RESPONSE_TRUNCATION_MARKER = "\n… (response truncated to fit Discord)"
+
+
+def _fit_response(response):
+    if len(response) > RESPONSE_LIMIT:
+        return response[:RESPONSE_LIMIT - len(RESPONSE_TRUNCATION_MARKER)] + RESPONSE_TRUNCATION_MARKER
+    return response
 
 
 def authorize(settings, chat, context):
@@ -156,8 +164,7 @@ def run_bot(settings_path, observer_path, socket_path, chat_path=None):
         finally:
             busy.discard(context["user_id"])
         # Fixed data can still contain Markdown; mentions are disabled at the transport.
-        if len(response) > 7600:
-            response = "Response exceeds Discord display limit; use the local status command or read-only MCP bridge."
+        response = _fit_response(response)
         for start in range(0, len(response), 1900):
             await message.channel.send(response[start:start + 1900])
 
