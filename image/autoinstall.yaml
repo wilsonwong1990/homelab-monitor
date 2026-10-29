@@ -36,4 +36,8 @@ autoinstall:
     - curtin in-target -- chown -R root:root /opt/homelab-monitor-src
     - curtin in-target -- install -m 0644 /opt/homelab-monitor-src/image/homelab-firstboot.service /etc/systemd/system/homelab-firstboot.service
     - curtin in-target -- systemctl enable homelab-firstboot.service
+    # Netboot may pass a hash-pinned, non-secret site profile on the kernel command line.
+    - curtin in-target -- python3 /opt/homelab-monitor-src/image/site_profile.py record
+    - curtin in-target -- install -m 0644 /opt/homelab-monitor-src/image/homelab-site-profile.service /etc/systemd/system/homelab-site-profile.service
+    - curtin in-target -- systemctl enable homelab-site-profile.service
     - curtin in-target -- rm -f /root/homelab-monitor.bundle /root/homelab-ref

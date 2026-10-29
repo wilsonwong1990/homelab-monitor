@@ -83,6 +83,18 @@ For a scripted host install, upgrade/rollback, smoke test, OS choice, or a
 bootable desktop installer image, see [docs/DEPLOY.md](docs/DEPLOY.md). The manual steps
 below are for development or other layouts.
 
+[Installer downloads and release instructions](docs/IMAGE.md) describe the
+split ISO assets, checksum verification, interactive disk/account setup and
+network-dependent first boot. Images contain pinned source, not your tokens;
+monitoring still needs configuration and explicit enablement.
+Each PR merged into `main` automatically pushes the next patch version tag and
+builds its installer release; unmerged PRs produce validation artifacts only.
+Daily GitHub Actions also detect new signed Ubuntu 24.04 Desktop point releases
+and publish refreshed images once the workflow is merged into `main`.
+[netboot.xyz setup](docs/NETBOOT.md) uses matching kernel/initrd assets and a
+credentialed LAN staging host; clients never need a GitHub token or direct
+access to this private repository.
+
 Use Python 3.9+ from this source checkout:
 
 ```bash

@@ -12,6 +12,9 @@ __pycache__/
 *.egg-info/
 build/
 dist/
+*.iso
+*.iso.provenance.json
+*.iso.part[0-9][0-9][0-9]
 
 # OS / editor
 .DS_Store

@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "ssh_authorized_keys": {
+    "wilson": [
+      "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEXAMPLEEXAMPLEEXAMPLEEXAMPLEEXAMPLEEXAMPLE replace-with-your-public-key"
+    ]
+  },
+  "packages": ["htop", "tmux", "openssh-server"],
+  "agents": [
+    {
+      "name": "homelab-assistant-agent",
+      "url": "https://github.com/wilsonwong1990/homelab-assistant-agent.git",
+      "commit": "0000000000000000000000000000000000000000"
+    }
+  ]
+}

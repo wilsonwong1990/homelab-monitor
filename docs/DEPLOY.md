@@ -49,7 +49,25 @@ can't send the alert.
 - The monitor itself has no GUI. Discord is the alert/approval UI, and
   `homelab_monitor status` or Hermes provide manual inspection.
 
-## Option A: build an installer image (recommended for a fresh PC)
+## Option A: download or build an installer image (fresh PC)
+
+For downloadable installers, USB instructions, release channels and build
+evidence, start with [PC installer downloads and releases](IMAGE.md).
+Validation prereleases are explicitly nonstable. This is a network-dependent
+installer, not an offline appliance; configuration and tokens remain yours to
+supply after installation.
+
+Every PR merged into `main` automatically receives the next semantic patch tag
+(`v0.1.0` initially) and invokes the installer release pipeline. No PAT is needed.
+PR creation alone and direct pushes do not publish stable versions; see the
+[maintainer release rule](IMAGE.md#maintainer-release-workflow).
+
+After review/merge, a daily Actions check also discovers new signed Ubuntu
+24.04 Desktop point releases and builds/releases their installers automatically.
+For PXE via netboot.xyz, use the [private LAN staging guide](NETBOOT.md):
+the staging host authenticates to GitHub and serves credential-free ISO,
+kernel/initrd and custom menu assets. A private repo URL cannot be directly
+chainloaded. Disk/account setup remain interactive.
 
 `image/build-iso.sh` repacks the **stock** Ubuntu Desktop 24.04 ISO with:
 
@@ -65,11 +83,21 @@ can't send the alert.
 No secrets or private infrastructure details are placed in the image.
 
 ```bash
-# On any Linux/macOS machine with git and xorriso (apt/brew install xorriso)
-curl -LO https://releases.ubuntu.com/24.04/ubuntu-24.04.3-desktop-amd64.iso   # use the current point release
-curl -LO https://releases.ubuntu.com/24.04/SHA256SUMS
-image/build-iso.sh --iso ubuntu-24.04.3-desktop-amd64.iso --ref main
+# Linux: sudo apt install xorriso gnupg git python3
+# macOS: brew install xorriso gnupg (also requires git and Python 3.9+)
+# Allow about 20 GB free for a local build; hosted release jobs check 26 GB.
+bash image/download-ubuntu.sh build/upstream latest
+version="$(python3 image/ubuntu_release.py build/upstream/SHA256SUMS | sed -n 's/^version=//p')"
+bash image/build-iso.sh --iso "build/upstream/ubuntu-$version-desktop-amd64.iso" --ref HEAD
 ```
+
+The signed Ubuntu manifest and pinned signing fingerprint are mandatory.
+Both GRUB boot menus are patched to load the interactive autoinstall; the
+upstream hybrid BIOS/UEFI boot records are replayed. The builder verifies the
+finished image's payload, boot catalog and updated media checksums before
+emitting provenance. The source must be committed; working-tree changes are
+not embedded. See [the image guide](IMAGE.md) for the automated boot checks and
+their limitations.
 
 Write the resulting `homelab-monitor-<commit>.iso` to a USB stick with
 balenaEtcher, `dd`, or Rufus in DD mode. Boot the PC from it and answer the
@@ -162,6 +190,12 @@ sudo /opt/homelab-monitor/deploy/smoke-test.sh
 ```
 
 ISO installs point `origin` at the upstream GitHub repository. Because it is private, `git fetch` as root needs credentials: add a read-only deploy key for root, or fetch in your own clone and pass that with `--source`. If you build images from a fork, run `sudo git -C /opt/homelab-monitor-src remote set-url origin <your-fork-url>` first.
+
+Prefer a reviewed release tag or exact commit over an unreviewed branch tip:
+fetch, inspect the release notes/diff and then use `git checkout --detach <tag-or-commit>`.
+Application updates use `deploy/install.sh`; writing a newer ISO is an OS
+installation, not an in-place application upgrade. Ubuntu security updates and
+Ollama/model upgrades remain separate operator responsibilities.
 
 Each commit becomes a new release directory. The configuration is validated
 with the new code *before* switching, and the state databases are backed up to

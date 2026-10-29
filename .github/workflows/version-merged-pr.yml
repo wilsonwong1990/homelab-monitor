@@ -1,0 +1,50 @@
+name: Version and release
+on:
+  push:
+    branches: [main, "image-validation/**"]
+permissions:
+  contents: read
+jobs:
+  tag:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      pull-requests: read
+    outputs:
+      version: ${{ steps.tag.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Tag only an actual PR merge into main
+        id: tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          COMMIT: ${{ github.sha }}
+        run: |
+          prs="$(gh api --paginate "repos/$GH_REPO/commits/$COMMIT/pulls" --jq '.[] | select(.merged_at != null and .base.ref == "main" and .base.repo.full_name == env.GH_REPO and .merge_commit_sha == env.COMMIT) | .number')"
+          if [[ -z "$prs" ]]; then
+            echo "No merged PR for this main tip; direct pushes do not create release tags."
+            exit 0
+          fi
+          version="$(bash scripts/tag-release.sh "$COMMIT")"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+  release:
+    needs: tag
+    if: needs.tag.outputs.version != ''
+    # GITHUB_TOKEN pushes do not emit another workflow run. Call it explicitly.
+    uses: ./.github/workflows/image-release.yml
+    permissions:
+      contents: write
+    with:
+      release_tag: ${{ needs.tag.outputs.version }}
+      publish: true
+  validation:
+    if: startsWith(github.ref, 'refs/heads/image-validation/')
+    # Exercise the same reusable-workflow call without merging or creating a stable tag.
+    uses: ./.github/workflows/image-release.yml
+    permissions:
+      contents: write
+    with:
+      publish: true
