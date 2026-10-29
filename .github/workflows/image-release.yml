@@ -140,6 +140,8 @@ jobs:
     needs: image
     if: github.event_name == 'push' || inputs.publish
     runs-on: ubuntu-24.04
+    outputs:
+      stable: ${{ steps.publish.outputs.stable }}
     timeout-minutes: 40
     permissions:
       contents: write
@@ -150,6 +152,7 @@ jobs:
           name: ${{ needs.image.outputs.artifact }}
           path: release
       - name: Publish only after verifying uploaded release assets
+        id: publish
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
@@ -160,12 +163,13 @@ jobs:
           ATTEMPT: ${{ github.run_attempt }}
           RELEASE_TAG: ${{ inputs.release_tag }}
         run: |
-          python3 release/assemble.py release --check-only
-          python3 -c 'from image.pxe import verify_assets; from pathlib import Path; verify_assets(Path("release"))'
+          cmp image/assemble.py release/assemble.py
+          env -u GH_TOKEN python3 image/assemble.py release --check-only
+          env -u GH_TOKEN python3 -c 'from image.pxe import verify_assets; from pathlib import Path; verify_assets(Path("release"))'
           stable=0
           refresh=0
           prerelease=true
-          if [[ -n "$RELEASE_TAG" || "$REF_TYPE" == tag ]]; then
+          if [[ -n "$RELEASE_TAG" || ( "$GITHUB_EVENT_NAME" == push && "$REF_TYPE" == tag ) ]]; then
             tag="${RELEASE_TAG:-$REF_NAME}"
             if [[ "$tag" == ubuntu-* || "$tag" == image-validation-ubuntu-* ]]; then
               expected="$(python3 -c 'import json,os; from image.ubuntu_release import release_tag; p=json.load(open("release/provenance.json")); print(release_tag(p["upstream_image"].removeprefix("ubuntu-").removesuffix("-desktop-amd64.iso"),os.environ["COMMIT"],p["upstream_sha256"],os.environ["RELEASE_TAG"].startswith("image-validation-")))' )"
@@ -190,6 +194,7 @@ jobs:
             tag="image-validation-$RUN_ID-$ATTEMPT"
             flags=(--target "$COMMIT" --prerelease)
           fi
+          echo "stable=$stable" >> "$GITHUB_OUTPUT"
           {
             printf 'Installer source commit: %s\n\n' "$COMMIT"
             printf 'Matching Casper kernel/initrd and a netboot.xyz custom menu are included. Private GitHub assets must be staged to a trusted LAN HTTP server; see NETBOOT.md. Never embed a GitHub token in boot URLs.\n\n'
@@ -200,8 +205,10 @@ jobs:
           # A deterministic Ubuntu refresh can resume an interrupted draft without moving a tag.
           gh api --paginate --slurp "repos/$GH_REPO/releases?per_page=100" > existing.json
           existing="$(jq -c --arg tag "$tag" '.[][] | select(.tag_name == $tag)' existing.json)"
-          if [[ -n "$existing" && "$refresh" == 1 ]]; then
-            [[ "$(jq -r '.target_commitish' <<< "$existing")" == "$COMMIT" ]] || { echo "ERROR: existing release targets different source"; exit 1; }
+          if [[ -n "$existing" ]]; then
+            if [[ "$refresh" == 1 ]]; then
+              [[ "$(jq -r '.target_commitish' <<< "$existing")" == "$COMMIT" ]] || { echo "ERROR: existing release targets different source"; exit 1; }
+            fi
             if [[ "$(jq -r '.draft' <<< "$existing")" == false ]]; then
               echo "Already published $tag; not overwriting immutable release assets"
               exit 0
@@ -211,21 +218,41 @@ jobs:
           fi
           gh release upload "$tag" release/* --clobber
           gh release download "$tag" --dir downloaded
-          python3 downloaded/assemble.py downloaded --check-only
-          python3 -c 'from image.pxe import verify_assets; from pathlib import Path; verify_assets(Path("downloaded"))'
+          cmp image/assemble.py downloaded/assemble.py
+          env -u GH_TOKEN python3 image/assemble.py downloaded --check-only
+          env -u GH_TOKEN python3 -c 'from image.pxe import verify_assets; from pathlib import Path; verify_assets(Path("downloaded"))'
           # Require every uploaded asset (including metadata) to survive a download intact.
           for file in release/*; do cmp "$file" "downloaded/$(basename "$file")"; done
           if [[ "$stable" == 1 ]]; then
-            release_id="$(gh release view "$tag" --json databaseId --jq .databaseId)"
-            # Only the highest published vX.Y.Z may be Latest; legacy ordering could pick an
-            # ubuntu-* refresh release, and completion order of concurrent builds is irrelevant.
-            highest="$({ jq -r '.[][] | select(.draft == false and .prerelease == false) | .tag_name' existing.json; echo "$tag"; } \
-              | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -1)"
-            latest=false
-            [[ "$highest" != "$tag" ]] || latest=true
-            gh api --method PATCH "repos/$GH_REPO/releases/$release_id" --silent \
-              -F draft=false -F prerelease=false -f make_latest="$latest"
+            # Do not let build completion order move Latest; a serialized job reconciles it.
+            gh release edit "$tag" --draft=false --prerelease=false --latest=false
           else
             gh release edit "$tag" --draft=false --prerelease="$prerelease" --latest=false
           fi
           gh release view "$tag" --json url --jq .url
+
+  reconcile-latest:
+    needs: publish
+    if: needs.publish.result == 'success' && needs.publish.outputs.stable == '1'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    # Only reconciliation is serialized. Completed releases are never dropped by a pending-slot replacement.
+    concurrency:
+      group: stable-release-latest-${{ github.repository }}
+      cancel-in-progress: false
+    steps:
+      - name: Mark highest published vMAJOR.MINOR.PATCH as Latest
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          gh api --paginate --slurp "repos/$GH_REPO/releases?per_page=100" > releases.json
+          highest="$(jq -r '.[][] | select(.draft == false and .prerelease == false) | .tag_name' releases.json \
+            | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -1)"
+          [[ -n "$highest" ]] || { echo "No published stable release to mark Latest"; exit 0; }
+          release_id="$(jq -r --arg tag "$highest" '.[][] | select(.tag_name == $tag) | .id' releases.json | head -1)"
+          [[ "$release_id" =~ ^[0-9]+$ ]] || { echo "ERROR: cannot identify highest stable release"; exit 1; }
+          gh api --method PATCH "repos/$GH_REPO/releases/$release_id" --silent \
+            -F draft=false -F prerelease=false -f make_latest=true
+          echo "Marked $highest Latest"

@@ -33,11 +33,14 @@ def validate_url(url):
 
 def render_menu(base, profile_url=None, profile_sha256=None):
     base = validate_url(base)
-    profile = ""
+    profile = "clear profile_url\nclear profile_sha256\n"
     if profile_url or profile_sha256:
         if not profile_url or not re.fullmatch(r"[0-9a-f]{64}", profile_sha256 or ""):
             raise ValueError("site profile needs both a LAN URL and a SHA-256")
-        profile = f"set profile_url {validate_url(profile_url)}\nset profile_sha256 {profile_sha256}\n"
+        profile = (
+            "clear profile_url\nclear profile_sha256\n"
+            f"set profile_url {validate_url(profile_url)}\nset profile_sha256 {profile_sha256}\n"
+        )
     return f"#!ipxe\nset asset_base {base}\n{profile}chain ${{asset_base}}/homelab.ipxe || exit 1\n"
 
 

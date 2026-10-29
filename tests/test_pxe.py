@@ -83,17 +83,25 @@ class PxeTests(unittest.TestCase):
             sha = digest(good)
             menu = (web / "homelab.ipxe").read_text()
             self.assertTrue(menu.startswith("#!ipxe\n"))
+            self.assertLess(menu.index("clear profile_url"), menu.index("set profile_url"))
+            self.assertLess(menu.index("clear profile_sha256"), menu.index(f"set profile_sha256 {sha}"))
             self.assertIn(f"set profile_url http://10.0.0.5/homelab-site/profile-{sha}.json\n", menu)
             self.assertIn(f"set profile_sha256 {sha}\n", menu)
             self.assertEqual(digest(web / f"homelab-site/profile-{sha}.json"), sha)
-            self.assertNotIn("profile", (web / "homelab/test-release/boot.ipxe").read_text())
+            local_menu = (web / "homelab/test-release/boot.ipxe").read_text()
+            self.assertIn("clear profile_url\nclear profile_sha256\n", local_menu)
+            self.assertNotIn(f"set profile_sha256 {sha}", local_menu)
             stage(assets, web, "http://10.0.0.5", "test-release")
-            self.assertNotIn("profile", (web / "homelab.ipxe").read_text())
+            wrapper = (web / "homelab.ipxe").read_text()
+            self.assertIn("clear profile_url\nclear profile_sha256\n", wrapper)
+            self.assertNotIn(f"set profile_sha256 {sha}", wrapper)
             secret = Path(temp, "secret.json")
             secret.write_text('{"version": 1, "token": "ghp_' + "a" * 36 + '"}')
             with self.assertRaisesRegex(ValueError, "credential"):
                 stage(assets, web, "http://10.0.0.5", "test-release", secret)
-            self.assertNotIn("profile", (web / "homelab.ipxe").read_text())
+            wrapper = (web / "homelab.ipxe").read_text()
+            self.assertIn("clear profile_url\nclear profile_sha256\n", wrapper)
+            self.assertNotIn(f"set profile_sha256 {sha}", wrapper)
 
     def test_corruption_and_concurrent_sync_fail_before_menu_publication(self):
         with tempfile.TemporaryDirectory() as temp:

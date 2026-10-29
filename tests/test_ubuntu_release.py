@@ -1,6 +1,6 @@
 import unittest
 
-from image.ubuntu_release import published_release, release_tag, select_image
+from image.ubuntu_release import installer_parts_from_sums, published_release, release_tag, select_image
 
 
 class UbuntuReleaseTests(unittest.TestCase):
@@ -32,12 +32,32 @@ class UbuntuReleaseTests(unittest.TestCase):
         release = {"tag_name": tag, "draft": True}
         self.assertFalse(published_release([[release]], tag, commit))
         release.update(draft=False, target_commitish=commit, assets=[])
+        sums = "".join(f"{'a' * 64}  {name}\n" for name in (
+            "homelab-monitor-bbbbbbbbbbbb.iso",
+            "homelab-monitor-bbbbbbbbbbbb.iso.part000",
+            "homelab-monitor-bbbbbbbbbbbb.iso.part001"))
         with self.assertRaisesRegex(ValueError, "missing"):
-            published_release([[release]], tag, commit)
+            published_release([[release]], tag, commit, sums)
         for name in ("provenance.json", "SHA256SUMS", "assemble.py", "pxe-vmlinuz", "pxe-initrd",
                      "PXE-SHA256SUMS", "homelab.ipxe", "INSTALL.md", "NETBOOT.md", "BUILD.txt",
-                     "homelab-monitor-bbbbbbbbbbbb.iso.part000"):
+                     "homelab-monitor-bbbbbbbbbbbb.iso.part000",
+                     "homelab-monitor-bbbbbbbbbbbb.iso.part001"):
             release["assets"].append({"name": name, "size": 1, "state": "uploaded"})
-        self.assertTrue(published_release([[], [release]], tag, commit))
+        self.assertEqual(installer_parts_from_sums(sums, commit), [
+            "homelab-monitor-bbbbbbbbbbbb.iso.part000", "homelab-monitor-bbbbbbbbbbbb.iso.part001"])
+        self.assertTrue(published_release([[], [release]], tag, commit, sums))
+        release["assets"] = [asset for asset in release["assets"] if not asset["name"].endswith("part001")]
+        with self.assertRaisesRegex(ValueError, "missing required assets"):
+            published_release([[release]], tag, commit, sums)
         with self.assertRaisesRegex(ValueError, "different source"):
-            published_release([[release]], tag, "c" * 40)
+            published_release([[release]], tag, "c" * 40, sums)
+
+    def test_published_release_needs_valid_complete_sums(self):
+        commit, tag = "b" * 40, "ubuntu-test"
+        release = {"tag_name": tag, "draft": False, "target_commitish": commit, "assets": []}
+        with self.assertRaisesRegex(ValueError, "SHA256SUMS"):
+            published_release([[release]], tag, commit)
+        for sums in ("garbage", f"{'a' * 64}  homelab-monitor-{commit[:12]}.iso\n",
+                     f"{'a' * 64}  homelab-monitor-{commit[:12]}.iso\n{'b' * 64}  homelab-monitor-{commit[:12]}.iso.part001\n"):
+            with self.subTest(sums=sums), self.assertRaises(ValueError):
+                installer_parts_from_sums(sums, commit)

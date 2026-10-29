@@ -73,6 +73,18 @@ class ImageTests(unittest.TestCase):
             with self.assertRaises(FileNotFoundError):
                 assemble(root, True)
 
+    def test_release_workflow_uses_trusted_verifier_and_serial_latest_reconciliation(self):
+        workflow = (ROOT / ".github/workflows/image-release.yml").read_text()
+        self.assertIn("cmp image/assemble.py release/assemble.py", workflow)
+        self.assertIn("cmp image/assemble.py downloaded/assemble.py", workflow)
+        self.assertNotIn("python3 release/assemble.py", workflow)
+        self.assertNotIn("python3 downloaded/assemble.py", workflow)
+        self.assertIn('GITHUB_EVENT_NAME" == push && "$REF_TYPE" == tag', workflow)
+        self.assertIn("concurrency:\n      group: stable-release-latest-${{ github.repository }}", workflow)
+        self.assertIn("--latest=false", workflow)
+        self.assertIn("| .id' releases.json", workflow)
+        self.assertIn("-f make_latest=true", workflow)
+
     def test_firstboot_is_pinned_and_never_enables_monitoring(self):
         unit = (ROOT / "image/homelab-firstboot.service").read_text()
         self.assertIn("Restart=on-failure", unit)

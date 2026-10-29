@@ -34,7 +34,17 @@ jobs:
           [[ "$REF" == refs/heads/main ]] || flags=(--validation)
           # Listing errors fail the run; an unavailable API is not an absent release.
           gh api --paginate --slurp "repos/$GH_REPO/releases?per_page=100" > releases.json
-          python3 image/ubuntu_release.py build/upstream/SHA256SUMS --commit "$COMMIT" "${flags[@]}" --published releases.json | tee -a "$GITHUB_OUTPUT"
+          selection="$(python3 image/ubuntu_release.py build/upstream/SHA256SUMS --commit "$COMMIT" "${flags[@]}")"
+          printf '%s\n' "$selection" | tee -a "$GITHUB_OUTPUT"
+          tag="$(sed -n 's/^tag=//p' <<< "$selection")"
+          sums_args=()
+          if jq -e --arg tag "$tag" '.[][] | select(.tag_name == $tag and .draft == false)' releases.json >/dev/null; then
+            mkdir -p build/published
+            gh release download "$tag" --repo "$GH_REPO" --pattern SHA256SUMS --dir build/published
+            sums_args=(--published-sums build/published/SHA256SUMS)
+          fi
+          python3 image/ubuntu_release.py build/upstream/SHA256SUMS --version "$(sed -n 's/^version=//p' <<< "$selection")" \
+            --commit "$COMMIT" "${flags[@]}" --published releases.json "${sums_args[@]}" | tee -a "$GITHUB_OUTPUT"
   release:
     needs: discover
     if: needs.discover.outputs.needed == 'true'

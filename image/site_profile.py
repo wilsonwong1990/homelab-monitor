@@ -47,7 +47,7 @@ def _url(value, schemes):
             or parsed.query or parsed.fragment
             or not re.fullmatch(r"[a-z]+://[A-Za-z0-9.:\[\]-]+(?:/[A-Za-z0-9._/~-]*)?", value)
             or any(part in (".", "..") for part in parsed.path.split("/"))):
-        raise ValueError(f"invalid URL (credentials, queries and fragments are not allowed): {value!r}")
+        raise ValueError("invalid URL: credentials, queries and fragments are not allowed")
     return value
 
 

@@ -50,8 +50,12 @@ class SiteProfileTests(unittest.TestCase):
             "oversize": b" " * (site_profile.MAX_BYTES + 1),
         }
         for name, raw in bad.items():
-            with self.subTest(name), self.assertRaises(ValueError):
+            with self.subTest(name), self.assertRaises(ValueError) as raised:
                 validate(raw)
+            if name == "credential url":
+                self.assertNotIn("secret", str(raised.exception))
+                self.assertNotIn("user", str(raised.exception))
+                self.assertNotIn("u:p@h", str(raised.exception))
 
     def test_cmdline_requires_url_and_hash_together(self):
         sha = "a" * 64
